@@ -21,7 +21,8 @@
   #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 16px; cursor: pointer;
     background: radial-gradient(circle at 50% 40%, #1C5B93, #0F4C81); }
-  #start h1 { font-weight: 400; font-size: 72px; margin: 0; color: #fff; }
+  #start h1 { font-family: 'Caveat', cursive; font-weight: 700; font-size: clamp(32px, 4.5vw, 64px);
+    margin: 0 24px; color: #fff; text-align: center; line-height: 1.2; }
   #start p { margin: 0; font-size: 22px; }
   #tap { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: rgba(20, 35, 50, .8);
     padding: 12px 22px; border-radius: 12px; text-align: center; font-size: 16px; line-height: 1.7; max-width: 92vw; }
@@ -38,7 +39,7 @@
 <audio id="au" src="APCS之歌.mp3" preload="auto"></audio>
 
 <div id="start">
-  <h1>APCS之歌</h1>
+  <h1>Wishing you happiness today, tomorrow, and always!</h1>
   <p>點一下開始播放</p>
   <p id="err" style="font-size:16px;opacity:.85"></p>
 </div>
@@ -542,7 +543,6 @@ function sIntro(g) {
   const { el, t } = g, step = 60 / BPM / 1.2, k = Math.floor((el - 6.5) / step), fr = ((el - 6.5) / step) % 1;
   piano(800, 380, 600, 220, { prog: er(el, .5, 6), press: i => el > 6.5 && MELODY[k % MELODY.length] === i ? 1 - fr : 0 });
   noteField(t, { x: 1010, y: 70, w: 260, h: 260, n: 9, seed: 3, a: ramp(el, 3, 6) });
-  T('APCS之歌', 800, 650, 96, er(el, 5.5, 8.5), { c: INK });
   T('給映頤的一首歌', 800, 730, 32, er(el, 8, 10), { c: INK, a: .8 });
   if (el > 7) whale(lerp(-200, 1800, ramp(el, 7, 7 + Math.max(8, g.dur - 7))), 150, 60, { a: .4 });
 }
