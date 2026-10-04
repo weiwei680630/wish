@@ -1,0 +1,1338 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>APCS之歌 MV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; background: #0F4C81; overflow: hidden; color: #fff;
+    font-family: 'LXGW WenKai TC', KaiTi, 'Microsoft JhengHei', serif; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px; display: flex; gap: 10px;
+    align-items: center; background: linear-gradient(transparent, rgba(20, 35, 50, .65)); transition: opacity .4s; }
+  #bar.hide { opacity: 0; pointer-events: none; }
+  button { font: inherit; font-size: 15px; color: #fff; background: rgba(255, 255, 255, .12);
+    border: 1px solid rgba(255, 255, 255, .5); border-radius: 18px; padding: 5px 14px; cursor: pointer; }
+  button:hover { background: rgba(255, 255, 255, .25); }
+  #seek { flex: 1; accent-color: #fff; min-width: 80px; }
+  #time, #shot { font-size: 14px; opacity: .85; white-space: nowrap; }
+  #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 16px; cursor: pointer;
+    background: radial-gradient(circle at 50% 40%, #1C5B93, #0F4C81); }
+  #start h1 { font-weight: 400; font-size: 72px; margin: 0; color: #fff; }
+  #start p { margin: 0; font-size: 22px; }
+  #tap { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: rgba(20, 35, 50, .8);
+    padding: 12px 22px; border-radius: 12px; text-align: center; font-size: 16px; line-height: 1.7; max-width: 92vw; }
+  #tap b { font-size: 26px; }
+  #panel { position: fixed; inset: 10% 15%; background: rgba(20, 35, 50, .94); border-radius: 14px; padding: 20px;
+    display: flex; flex-direction: column; gap: 10px; }
+  #panel textarea { flex: 1; font-family: Consolas, monospace; font-size: 13px; background: #0e1a24; color: #dfe;
+    border: none; border-radius: 8px; padding: 10px; resize: none; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<audio id="au" src="APCS之歌.mp3" preload="auto"></audio>
+
+<div id="start">
+  <h1>APCS之歌</h1>
+  <p>點一下開始播放</p>
+  <p id="err" style="font-size:16px;opacity:.85"></p>
+</div>
+
+<div id="bar">
+  <button id="playBtn">▶</button>
+  <span id="time">0:00 / 0:00</span>
+  <input id="seek" type="range" min="0" max="1000" value="0">
+  <span id="shot"></span>
+  <button id="tapBtn">打點校正</button>
+  <button id="tblBtn">時間表</button>
+  <button id="fsBtn">全螢幕</button>
+</div>
+
+<div id="tap" class="hidden"></div>
+
+<div id="panel" class="hidden">
+  <div>時間表（JSON）：已自動存在這台電腦的瀏覽器裡。可以複製保存，或貼上別的時間表後按「套用」。</div>
+  <textarea id="json" spellcheck="false"></textarea>
+  <div style="display:flex;gap:10px;justify-content:flex-end">
+    <button id="copyBtn">複製</button>
+    <button id="applyBtn">套用</button>
+    <button id="resetBtn">恢復預設</button>
+    <button id="closeBtn">關閉</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// 歌詞與段落（預估時間，可用「打點校正」改成精準時間）
+// ============================================================
+const SECTIONS = [
+  { name: 'Intro', start: 0, end: 15, lines: [] },
+  { name: 'Verse 1', start: 15, end: 50, lines: [
+    '如果，否則，先把思路排好', '在亂數裡找規律，慢慢就看到方向', '每一個 for 迴圈', '都是往前一步的腳印',
+    '縮排要對齊', '層次分明，心也就不慌', '當思緒卡住', '像霧把眼前都蓋上', '記住印出，記住呼吸', '它會替妳照亮'] },
+  { name: 'Verse 2', start: 50, end: 95, lines: [
+    '暴力解法不用怕', '由左到右，由上到下', '穩穩走，別急著跳', '一關一關把它拆下',
+    '如果矩陣要翻轉', '座標在腦海裡打架', '就先閉上眼', '讓直覺先回答',
+    '風怎麼吹，水怎麼流', '答案早在心裡發芽', '一步一步，照著做', '妳會把迷宮打開啊'] },
+  { name: 'Chorus 1', start: 95, end: 125, lines: [
+    '如果要重玩，就重設', '回到起點，不怕再來', '如果要繼續，就更新', '把每一格都安排好來',
+    '如果多人對戰，先整理清單', '一個一個補上空白', '守住變數，守住節拍', '得分的瞬間就會到來'] },
+  { name: 'Verse 3', start: 125, end: 170, lines: [
+    '中級的戰場', '常常像一張大地圖', '有時要自己鋪路', '有時答案就在內建裡駐足',
+    '資料處理別心急', '大和小，都慢慢讀', '字典，計數，映射', '是妳最穩的三個支柱',
+    '考前把它們收進背包', '像把勇氣疊成一束', '妳不用完美', '只要把每步都做準確'] },
+  { name: 'Bridge', start: 170, end: 200, lines: [
+    '敲擊鍵盤的聲音', '一下一下，陪妳走', '映頤，先深呼吸', '看著螢幕，別回頭',
+    '今天卡住的題目', '明天就會懂得更透', '妳寫下的每一行', '都在替未來鋪路'] },
+  { name: 'Chorus 2', start: 200, end: 235, lines: [
+    '如果要重玩，就重設', '回到起點，不怕再來', '如果要繼續，就更新', '把每一格都安排好來',
+    '如果多人對戰，先整理清單', '一個一個補上空白', '守住變數，守住節拍', '得分的瞬間就會到來'] },
+  { name: 'Outro', start: 235, end: 253, lines: [
+    '耐心一行一行寫下', 'Bug 會慢慢退散開', '深呼吸，抬起頭來', '妳會順利過關，閃閃發亮'] },
+];
+
+const LYRICS = [];
+SECTIONS.forEach((s, si) => {
+  s.first = LYRICS.length;
+  s.lines.forEach(text => LYRICS.push({ text, sec: si }));
+});
+// 每句歌詞的開始／結束秒數（依實際音檔整理）
+const DEFAULT_TIMES = [17.4,22.9,29.9,31.9,36.5,38.9,43.6,46.1,50.9,54,57.5,61.6,65.3,67.9,72,75.3,78.6,81.4,85.7,89.6,92.4,96.2,99.8,103.5,106.9,110.3,113.7,117.8,120.9,124.7,130.6,132.7,134.8,137.9,144.5,147.2,149.2,151.8,157.9,161.1,165.3,167.5,172.1,176,179.5,182.9,186,189.8,193.4,196.8,200.3,204,207.4,210.7,214.1,218.2,221.2,224.9,231.2,234.7,238.3,242];
+const DEFAULT_ENDS = [21.8,28.1,31.6,35.1,38.6,42.1,45.5,49,53.7,56,61,64.6,67.9,71.4,74.9,78.6,81,83.8,89,92.4,95.8,99.2,103.1,106.5,110.1,113.2,117.7,120.4,124.4,129,132.4,134.8,137.4,142.6,147.2,149,151.4,156.6,160.7,163.7,167.3,170.4,175.7,179.1,182.5,186,189.5,192.9,196.3,199.7,203.6,206.9,210.5,213.5,218,220.8,224.7,229.2,234.7,237.8,241.3,246.3];
+
+const STORE_KEY = 'apcs-mv-timing-v2';
+const DEFAULT_BPM = 88;
+let TIMES = DEFAULT_TIMES.slice();
+let ENDS = DEFAULT_ENDS.slice();
+let BPM = DEFAULT_BPM;
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE_KEY));
+  if (saved && Array.isArray(saved.times) && saved.times.length === LYRICS.length) TIMES = saved.times.map(Number);
+  if (saved && Array.isArray(saved.ends) && saved.ends.length === LYRICS.length) ENDS = saved.ends.map(Number);
+  if (saved && saved.bpm > 30 && saved.bpm < 240) BPM = +saved.bpm;
+} catch (e) { /* 沒有存檔就用預設 */ }
+
+function saveTiming() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ bpm: BPM, times: TIMES, ends: ENDS })); } catch (e) { /* 無法儲存時忽略 */ }
+}
+
+// ============================================================
+// 基本工具
+// ============================================================
+const W = 1600, H = 900;
+const INK = '#F7FBFF';
+const DARK = '#1E262D';
+const HAND = "'Caveat', 'LXGW WenKai TC', cursive";
+const ZH = "'LXGW WenKai TC', 'Caveat', KaiTi, 'Microsoft JhengHei', serif";
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const ramp = (x, a, b) => clamp((x - a) / (b - a));
+const ease = u => u < .5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+const er = (x, a, b) => ease(ramp(x, a, b));
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function noise(x) { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return lerp(rnd(i), rnd(i + 1), u) * 2 - 1; }
+function mulberry(a) {
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function hex(c) { return [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)); }
+function mix(c1, c2, u) { const a = hex(c1), b = hex(c2); return `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], u))).join(',')})`; }
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let scale = 1, offX = 0, offY = 0, dpr = 1;
+let boil = 0;      // 線條「抖動」用的影格編號，做出手繪感
+let curT = 0;      // 目前歌曲時間
+
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(innerWidth * dpr);
+  cv.height = Math.round(innerHeight * dpr);
+  scale = Math.min(cv.width / W, cv.height / H);
+  offX = (cv.width - W * scale) / 2;
+  offY = (cv.height - H * scale) / 2;
+}
+addEventListener('resize', resize);
+resize();
+
+// ---------- 點集合產生器 ----------
+function seg(x1, y1, x2, y2, seed = 0) {
+  const d = Math.hypot(x2 - x1, y2 - y1), n = Math.max(2, Math.ceil(d / 10));
+  const bow = (rnd(seed + .3) - .5) * d * .03, nx = -(y2 - y1) / (d || 1), ny = (x2 - x1) / (d || 1);
+  const p = [];
+  for (let i = 0; i <= n; i++) { const u = i / n, b = Math.sin(Math.PI * u) * bow; p.push([lerp(x1, x2, u) + nx * b, lerp(y1, y2, u) + ny * b]); }
+  return p;
+}
+function poly(arr, seed = 0) { let out = []; for (let i = 0; i < arr.length - 1; i++) { const s = seg(arr[i][0], arr[i][1], arr[i + 1][0], arr[i + 1][1], seed + i); out = out.concat(i ? s.slice(1) : s); } return out; }
+function rectP(x, y, w, h, s = 0) { return poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y - 2]], s); }
+function ellP(cx, cy, rx, ry, a0 = -Math.PI / 2, turn = 1.04, rot = 0) {
+  const n = Math.max(12, Math.ceil((rx + ry) * turn * .6)), p = [], c = Math.cos(rot), s = Math.sin(rot);
+  for (let i = 0; i <= n; i++) { const a = a0 + i / n * turn * Math.PI * 2, x = Math.cos(a) * rx, y = Math.sin(a) * ry; p.push([cx + x * c - y * s, cy + x * s + y * c]); }
+  return p;
+}
+function crv(ctrl, per = 8) { // Catmull-Rom 曲線
+  const p = [];
+  for (let i = 0; i < ctrl.length - 1; i++) {
+    const p0 = ctrl[i - 1] || ctrl[i], p1 = ctrl[i], p2 = ctrl[i + 1], p3 = ctrl[i + 2] || p2;
+    const n = Math.max(2, Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / per));
+    for (let j = i ? 1 : 0; j <= n; j++) {
+      const t = j / n, t2 = t * t, t3 = t2 * t;
+      p.push([0, 1].map(k => .5 * (2 * p1[k] + (-p0[k] + p2[k]) * t + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * t3)));
+    }
+  }
+  return p;
+}
+function along(pts, u) {
+  const Ls = [0];
+  for (let i = 1; i < pts.length; i++) Ls.push(Ls[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const tg = Ls[Ls.length - 1] * clamp(u);
+  let i = 1; while (i < pts.length - 1 && Ls[i] < tg) i++;
+  const a = pts[i - 1], b = pts[i], f = clamp((tg - Ls[i - 1]) / ((Ls[i] - Ls[i - 1]) || 1));
+  return { x: lerp(a[0], b[0], f), y: lerp(a[1], b[1], f), a: Math.atan2(b[1] - a[1], b[0] - a[0]) };
+}
+
+// ---------- 手繪筆觸 ----------
+// pts：點集合；prog：畫到幾成（0~1）；o：{w 線寬, c 顏色, a 透明度, j 抖動, single 單筆, dash 虛線, seed}
+function S(pts, prog = 1, o = {}) {
+  prog = clamp(prog);
+  if (prog <= 0 || !pts || pts.length < 2) return;
+  const L = [0];
+  for (let i = 1; i < pts.length; i++) L.push(L[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const tot = L[L.length - 1] * prog, w = o.w || 3, seed = (o.seed || 0) * 13.7;
+  ctx.strokeStyle = o.c || INK; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (o.dash) { ctx.setLineDash(o.dash); ctx.lineDashOffset = o.dashOff || 0; }
+  const ga = ctx.globalAlpha;
+  for (let pass = 0; pass < (o.single ? 1 : 2); pass++) {
+    const amp = (o.j ?? 1.2) * (pass ? 1.8 : 1), bs = seed + boil * 3.1 + pass * 17;
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      let x = pts[i][0], y = pts[i][1];
+      const over = L[i] > tot;
+      if (over) { const a = pts[i - 1], f = (tot - L[i - 1]) / ((L[i] - L[i - 1]) || 1); x = lerp(a[0], x, f); y = lerp(a[1], y, f); }
+      x += noise(bs + i * .23) * amp; y += noise(bs + 50 + i * .23) * amp;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      if (over) break;
+    }
+    ctx.lineWidth = pass ? w * .5 : w;
+    ctx.globalAlpha = ga * (pass ? .5 : 1) * (o.a ?? 1);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = ga;
+  if (o.dash) { ctx.setLineDash([]); ctx.lineDashOffset = 0; }
+}
+function F(pts, fill) {
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+  ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+}
+function alpha(a, fn) { const ga = ctx.globalAlpha; ctx.globalAlpha = ga * clamp(a); if (a > 0) fn(); ctx.globalAlpha = ga; }
+
+// ---------- 手寫字（逐字寫出） ----------
+function T(s, x, y, size, prog = 1, o = {}) {
+  prog = clamp(prog); if (prog <= 0) return;
+  const chars = [...s];
+  ctx.font = `${o.wt || 400} ${size}px ${o.f || ZH}`;
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = o.c || INK;
+  const full = ctx.measureText(s).width;
+  const x0 = o.al === 'left' ? x : o.al === 'right' ? x - full : x - full / 2;
+  const n = chars.length * prog, k = Math.floor(n), ga = ctx.globalAlpha, a = o.a ?? 1;
+  const vis = chars.slice(0, k).join('');
+  ctx.globalAlpha = ga * a; ctx.fillText(vis, x0, y);
+  if (k < chars.length) { ctx.globalAlpha = ga * a * (n - k); ctx.fillText(chars[k], x0 + ctx.measureText(vis).width, y + (1 - (n - k)) * 5); }
+  ctx.globalAlpha = ga;
+}
+
+// ============================================================
+// 圖形元件：音符、星星、鋼琴、鍵盤、鯨魚……
+// ============================================================
+const CLEF = (() => {
+  const p = [];
+  for (let i = 0; i <= 30; i++) { const a = Math.PI * .5 + i / 30 * Math.PI * 2.3, r = .05 + i / 30 * .3; p.push([Math.cos(a) * r * .9, .35 + Math.sin(a) * r]); }
+  p.push([.2, .05], [.12, -.45], [.02, -.85], [-.12, -.72], [-.04, -.4], [.07, .2], [.1, .9], [.0, 1.02], [-.12, .92]);
+  return crv(p, .04);
+})();
+
+const noteKind = x => x < .45 ? 0 : x < .9 ? 1 : 2;
+function note(x, y, s, kind, o = {}) {
+  const c = DARK; // 所有音符一律黑色
+  ctx.save(); ctx.translate(x, y); ctx.rotate(o.r || 0); ctx.globalAlpha *= clamp(o.a ?? 1);
+  const head = (hx, hy) => { ctx.beginPath(); ctx.ellipse(hx, hy, s * .32, s * .22, -.45, 0, 7); ctx.fillStyle = c; ctx.fill(); };
+  const so = { c, w: Math.max(1.5, s * .08), single: true, j: .4 };
+  if (kind === 0) {
+    head(0, 0); S(seg(s * .28, -s * .05, s * .28, -s * 1.1), 1, so);
+    S(crv([[s * .28, -s * 1.1], [s * .62, -s * .8], [s * .55, -s * .42]], 3), 1, so);
+  } else if (kind === 1) {
+    head(0, 0); head(s * .8, -s * .18);
+    S(seg(s * .28, -s * .05, s * .28, -s * 1.1), 1, so); S(seg(s * 1.08, -s * .23, s * 1.08, -s * 1.28), 1, so);
+    S(seg(s * .28, -s * 1.1, s * 1.08, -s * 1.28), 1, { ...so, w: s * .16 });
+  } else {
+    S(CLEF.map(([a, b]) => [a * s * .9, b * s * .9]), 1, { ...so, w: Math.max(1.5, s * .07) });
+  }
+  ctx.restore();
+}
+
+function spark(x, y, r, o = {}) {
+  const so = { c: o.c || INK, w: o.w || 2, single: true, j: .3 };
+  alpha(o.a ?? 1, () => {
+    S(seg(x - r, y, x + r, y), 1, so); S(seg(x, y - r, x, y + r), 1, so);
+    const q = r * .4; S(seg(x - q, y - q, x + q, y + q), 1, { ...so, w: so.w * .6 }); S(seg(x - q, y + q, x + q, y - q), 1, { ...so, w: so.w * .6 });
+  });
+}
+
+// 飄浮的塗鴉音符（只依時間計算，可任意快轉）
+function noteField(t, o) {
+  for (let i = 0; i < o.n; i++) {
+    const sd = (o.seed || 0) + i * 7.3, sp = (o.speed || 25) * (.6 + rnd(sd) * .8), life = o.h / sp;
+    const ph = ((t + rnd(sd + 1) * life) % life) / life;
+    const x = o.x + rnd(sd + 2) * o.w + Math.sin(t * .8 + i) * 12, y = o.y + o.h * (1 - ph);
+    note(x, y, (o.size || 26) * (.7 + rnd(sd + 3) * .6), noteKind(rnd(sd + 4)), { a: Math.sin(Math.PI * ph) * (o.a ?? 1), c: o.c, r: Math.sin(t + i) * .2 });
+  }
+}
+
+// 音符與星星爆開
+function burst(cx, cy, el, o = {}) {
+  const life = o.life || 2.6;
+  if (el < 0 || el > life) return;
+  const n = o.n || 20;
+  for (let i = 0; i < n; i++) {
+    const sd = (o.seed || 0) + i * 3.1, ang = -Math.PI / 2 + (rnd(sd) - .5) * (o.spread || Math.PI * 1.7);
+    const v = (o.v || 520) * (.35 + rnd(sd + 1) * .8);
+    const x = cx + Math.cos(ang) * v * el, y = cy + Math.sin(ang) * v * el + 260 * el * el, a = 1 - el / life;
+    if (rnd(sd + 2) < .5) note(x, y, 22 + rnd(sd + 3) * 16, noteKind(rnd(sd + 6)), { a, c: o.c, r: el * 3 * (rnd(sd + 4) - .5) });
+    else spark(x, y, 8 + rnd(sd + 5) * 12, { a });
+  }
+}
+
+const BLACK_AFTER = [1, 1, 0, 1, 1, 1, 0];
+function hatchRect(x, y, w, h, seed, press = 0) {
+  if (h <= 1) return;
+  const pts = rectP(x, y, w, h, seed);
+  ctx.beginPath();
+  pts.forEach((p, i) => { const px = p[0] + noise(seed * 9 + i * .3 + boil) * 1, py = p[1] + noise(seed * 9 + 40 + i * .3 + boil) * 1; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+  ctx.closePath(); ctx.fillStyle = press ? mix(DARK, '#7D93A6', press) : DARK; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 1.2; ctx.beginPath();
+  for (let k = 0; k < 5; k++) { const yy = y + h * (.12 + .76 * rnd(seed * 3 + k)), xx = x + w * (.12 + .2 * rnd(seed + k)); ctx.moveTo(xx, yy); ctx.lineTo(xx + w * .55, yy - h * .07); }
+  ctx.stroke();
+}
+
+// 線稿鋼琴；press(i) 回傳白鍵按下程度，pressB(i) 回傳黑鍵按下程度
+function piano(cx, cy, w, h, o = {}) {
+  const n = o.n || 12, kw = w / n, x0 = cx - w / 2, y0 = cy - h / 2, p = o.prog ?? 1, press = o.press || (() => 0), lw = o.lw || 4;
+  alpha(o.a ?? 1, () => {
+    for (let i = 0; i < n; i++) { const d = press(i); if (d > 0) { ctx.fillStyle = `rgba(255,255,255,${.4 * d})`; ctx.fillRect(x0 + i * kw + 3, y0 + 3, kw - 6, h - 6); } }
+    S(rectP(x0, y0, w, h, o.seed || 0), ramp(p, 0, .35), { w: lw });
+    for (let i = 1; i < n; i++) S(seg(x0 + i * kw, y0, x0 + i * kw, y0 + h, i), ramp(p, .25 + i / n * .3, .35 + i / n * .3), { w: lw * .8 });
+    const bw = kw * .6, bh = h * .6;
+    for (let i = 0; i < n - 1; i++) {
+      if (!BLACK_AFTER[i % 7]) continue;
+      const pp = ramp(p, .6 + i / n * .3, .7 + i / n * .3);
+      if (pp > 0) hatchRect(x0 + (i + 1) * kw - bw / 2, y0, bw, bh * pp, i + 1, o.pressB ? o.pressB(i) : 0);
+    }
+  });
+}
+function keyX(cx, w, n, i) { return cx - w / 2 + (i + .5) * w / n; }
+
+// 電腦鍵盤（和鋼琴互相變形用）
+const KB_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
+function keyboard(cx, cy, w, h, o = {}) {
+  const kw = w / 10.6, kh = h / 4.4, x0 = cx - w / 2, y0 = cy - h / 2, press = o.press ?? -1;
+  alpha(o.a ?? 1, () => {
+    S(rectP(x0 - 14, y0 - 14, w + 28, h + 28, 3), o.prog ?? 1, { w: 3 });
+    let idx = 0;
+    KB_ROWS.forEach((row, r) => {
+      [...row].forEach((ch, c) => {
+        const x = x0 + r * kw * .4 + c * kw * 1.05 + 4, y = y0 + r * kh * 1.08 + 4;
+        if (idx === press) { ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fillRect(x, y, kw * .9, kh * .9); }
+        S(rectP(x, y, kw * .9, kh * .9, idx), 1, { w: 2.2, single: true, j: .6 });
+        T(ch, x + kw * .45, y + kh * .45, kh * .5, 1, { f: HAND, a: .9 });
+        idx++;
+      });
+    });
+    S(rectP(cx - w * .27, y0 + 3 * kh * 1.08 + 6, w * .54, kh * .85, 77), 1, { w: 2.2, single: true, j: .6 });
+  });
+}
+
+// 原創的線稿鯨魚（頭朝右，局部座標約 -1.2 ~ 1）
+const WB = [[-0.86, -0.04], [-0.6, -0.18], [-0.2, -0.3], [0.25, -0.33], [0.62, -0.25], [0.88, -0.08], [0.96, 0.05], [0.86, 0.18], [0.55, 0.28], [0.1, 0.3], [-0.35, 0.21], [-0.7, 0.08], [-0.86, 0.04]];
+const WF = [[-0.86, -0.04], [-1.0, -0.12], [-1.2, -0.3], [-1.13, -0.1], [-1.04, 0], [-1.13, 0.1], [-1.2, 0.3], [-1.0, 0.12], [-0.86, 0.04]];
+const WM = [[0.93, 0.08], [0.78, 0.12], [0.52, 0.12]];
+const WG = [[[0.72, 0.18], [0.45, 0.21], [0.15, 0.23]], [[0.62, 0.235], [0.4, 0.255], [0.2, 0.265]]];
+const WFIN = [[0.28, 0.24], [0.14, 0.43], [0.0, 0.47], [0.06, 0.27]];
+function whaleMap(cx, cy, s, o = {}) {
+  const dir = o.dir || 1, c = Math.cos(o.rot || 0), sn = Math.sin(o.rot || 0);
+  return pt => { const x = pt[0] * dir, y = pt[1]; return [cx + (x * c - y * sn) * s, cy + (x * sn + y * c) * s]; };
+}
+function whale(cx, cy, s, o = {}) {
+  const p = o.prog ?? 1, tail = o.tail ?? Math.sin(curT * 2.2 + (o.ph || 0)) * .22, lw = o.w || Math.max(2, s * .014);
+  const M = whaleMap(cx, cy, s, o), tc = Math.cos(tail), ts = Math.sin(tail);
+  const fl = WF.map(([x, y]) => { const dx = x + .86; return [-.86 + dx * tc - y * ts, dx * ts + y * tc]; });
+  const body = crv(WB.map(M), 6);
+  alpha(o.a ?? 1, () => {
+    if (p > .9) F(body, `rgba(255,255,255,${.1 * ramp(p, .9, 1)})`);
+    S(body, ramp(p, 0, .5), { w: lw, seed: o.seed || 0 });
+    S(crv(fl.map(M), 6), ramp(p, .35, .6), { w: lw });
+    S(crv(WFIN.map(M), 6), ramp(p, .5, .7), { w: lw * .9 });
+    S(crv(WM.map(M), 6), ramp(p, .6, .75), { w: lw * .9 });
+    WG.forEach((g, i) => S(crv(g.map(M), 6), ramp(p, .7 + i * .05, .85 + i * .05), { w: lw * .6, a: .8 }));
+    if (p > .85) { const e = M([0.55, 0.03]); ctx.beginPath(); ctx.arc(e[0], e[1], Math.max(2, s * .022), 0, 7); ctx.fillStyle = DARK; ctx.fill(); }
+  });
+  return M;
+}
+function spout(x, y, s, p, o = {}) {
+  const C = [[0, 0], [0, -.5], [0, -1]], L = [[0, 0], [0, -.55], [-.15, -.85], [-.4, -.9], [-.5, -.75]], R = L.map(([a, b]) => [-a, b]);
+  [C, L, R].forEach((arr, i) => S(crv(arr.map(([a, b]) => [x + a * s, y + b * s]), 5), ramp(p, i * .15, .6 + i * .15), { w: o.w || 3 }));
+  if (p > .8) [[-.6, -.5], [.6, -.5], [-.3, -1.05], [.3, -1.05]].forEach(([a, b], i) => S(ellP(x + a * s, y + b * s, 4, 4), ramp(p, .8, 1), { w: 2, single: true }));
+}
+
+function bug(x, y, s, t, o = {}) {
+  alpha(o.a ?? 1, () => {
+    for (let k = 0; k < 3; k++) for (const side of [-1, 1]) {
+      const lx = x + (k - 1) * s * .45, wig = Math.sin(t * 14 + k + side) * s * .12;
+      S(poly([[lx, y], [lx + wig, y + side * s * .55], [lx + wig + s * .15, y + side * s * .75]]), 1, { c: DARK, w: 2, single: true, j: .3 });
+    }
+    S(crv([[x + s * .8, y - s * .1], [x + s * 1.1, y - s * .5], [x + s * 1.25, y - s * .55]], 3), 1, { c: DARK, w: 2, single: true });
+    S(crv([[x + s * .8, y + s * .1], [x + s * 1.1, y + s * .5], [x + s * 1.25, y + s * .55]], 3), 1, { c: DARK, w: 2, single: true });
+    F(ellP(x, y, s * .65, s * .42, 0, 1), DARK);
+    F(ellP(x + s * .72, y, s * .25, s * .22, 0, 1), DARK);
+    ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 1.2; ctx.beginPath();
+    ctx.moveTo(x - s * .4, y - s * .15); ctx.lineTo(x + s * .3, y - s * .25); ctx.moveTo(x - s * .3, y + s * .12); ctx.lineTo(x + s * .35, y + s * .02); ctx.stroke();
+  });
+}
+
+function cake(cx, cy, s, p, t) {
+  const w1 = 1.6 * s, h1 = .55 * s, w2 = 1.1 * s, h2 = .45 * s;
+  S(ellP(cx, cy + h1 / 2 + 6, w1 * .65, 14, Math.PI, 1.02), ramp(p, 0, .2), { w: 3 });
+  S(rectP(cx - w1 / 2, cy - h1 / 2, w1, h1, 31), ramp(p, .1, .4), { w: 3.5 });
+  const icing = []; for (let i = 0; i <= 24; i++) { const u = i / 24; icing.push([cx - w1 / 2 + u * w1, cy - h1 / 2 + 10 + Math.abs(Math.sin(u * Math.PI * 6)) * 14]); }
+  S(icing, ramp(p, .35, .55), { w: 2.5 });
+  const y2 = cy - h1 / 2 - h2;
+  S(rectP(cx - w2 / 2, y2, w2, h2, 32), ramp(p, .45, .7), { w: 3.5 });
+  for (let i = 0; i < 5; i++) S(ellP(cx - w2 / 2 + (i + .5) * w2 / 5, y2 + h2 * .55, 5, 5), ramp(p, .65, .8), { w: 2, single: true });
+  S(rectP(cx - 7, y2 - .45 * s, 14, .45 * s, 33), ramp(p, .75, .9), { w: 2.5 });
+  if (p > .9) {
+    const fl = 1 + Math.sin(t * 13) * .12 + Math.sin(t * 7.3) * .08, fy = y2 - .45 * s - 6;
+    const flame = crv([[cx, fy], [cx - 11, fy - 14 * fl], [cx, fy - 36 * fl], [cx + 11, fy - 14 * fl], [cx, fy]], 3);
+    alpha(ramp(p, .9, 1), () => { F(flame, 'rgba(255,255,255,.85)'); S(flame, 1, { w: 2, single: true }); });
+  }
+}
+
+// ============================================================
+// 預先產生的圖形資料
+// ============================================================
+const FOG = [...Array(34)].map((_, i) => {
+  const cx = rnd(i * 4.1) * 1600, cy = rnd(i * 6.7) * 900, R = 50 + rnd(i * 2.3) * 110, p = [];
+  for (let k = 0; k <= 60; k++) { const u = k / 60, a = u * Math.PI * 5 + i, r = R * u; p.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r * .8]); }
+  return { p, cx, cy };
+});
+function drawFog(prog, clearX = 0, clearY = 0, clearR = -1, a = .75) {
+  FOG.forEach((f, i) => {
+    const start = i / FOG.length;
+    if (prog < start) return;
+    if (clearR > 0 && Math.hypot(f.cx - clearX, f.cy - clearY) < clearR) return;
+    S(f.p, ramp(prog, start, start + .08), { w: 2.5, a });
+  });
+}
+
+const TREE = [];
+(function gen(x, y, a, len, d) {
+  const ex = x + Math.cos(a) * len, ey = y + Math.sin(a) * len, bend = (rnd(TREE.length * 3.3) - .5) * len * .25;
+  const mx = (x + ex) / 2 + Math.cos(a + Math.PI / 2) * bend, my = (y + ey) / 2 + Math.sin(a + Math.PI / 2) * bend;
+  TREE.push({ pts: crv([[x, y], [mx, my], [ex, ey]], 6), d, ex, ey });
+  if (d < 5) { const k = TREE.length; gen(ex, ey, a - (.32 + rnd(k * 1.7) * .3), len * .74, d + 1); gen(ex, ey, a + (.32 + rnd(k * 2.9) * .3), len * .74, d + 1); }
+})(800, 690, -Math.PI / 2, 130, 0);
+
+const MZ = (() => {
+  const C = 11, R = 5, cs = 88, x0 = 800 - C * cs / 2, y0 = 390 - R * cs / 2, r = mulberry(7);
+  const right = [...Array(R)].map(() => Array(C).fill(true)), down = [...Array(R)].map(() => Array(C).fill(true));
+  const vis = [...Array(R)].map(() => Array(C).fill(false)), st = [[0, 0]];
+  vis[0][0] = true;
+  while (st.length) {
+    const [y, x] = st[st.length - 1];
+    const nb = [[y - 1, x], [y + 1, x], [y, x - 1], [y, x + 1]].filter(([a, b]) => a >= 0 && a < R && b >= 0 && b < C && !vis[a][b]);
+    if (!nb.length) { st.pop(); continue; }
+    const [ny, nx] = nb[Math.floor(r() * nb.length)];
+    if (ny > y) down[y][x] = false; else if (ny < y) down[ny][nx] = false; else if (nx > x) right[y][x] = false; else right[ny][nx] = false;
+    vis[ny][nx] = true; st.push([ny, nx]);
+  }
+  const Wl = [], P = (a, b, c, d) => Wl.push(seg(a, b, c, d, Wl.length));
+  for (let x = 0; x < C; x++) P(x0 + x * cs, y0, x0 + (x + 1) * cs, y0);
+  for (let y = 1; y < R; y++) P(x0, y0 + y * cs, x0, y0 + (y + 1) * cs);
+  for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) {
+    if (down[y][x]) P(x0 + x * cs, y0 + (y + 1) * cs, x0 + (x + 1) * cs, y0 + (y + 1) * cs);
+    if (right[y][x] && !(x === C - 1 && y === R - 1)) P(x0 + (x + 1) * cs, y0 + y * cs, x0 + (x + 1) * cs, y0 + (y + 1) * cs);
+  }
+  const exit = seg(x0 + C * cs, y0 + (R - 1) * cs, x0 + C * cs, y0 + R * cs, 99);
+  const key = (y, x) => y * C + x, prev = { 0: -1 }, q = [[0, 0]];
+  while (q.length) {
+    const [y, x] = q.shift();
+    if (y === R - 1 && x === C - 1) break;
+    const nbs = [];
+    if (x < C - 1 && !right[y][x]) nbs.push([y, x + 1]);
+    if (x > 0 && !right[y][x - 1]) nbs.push([y, x - 1]);
+    if (y < R - 1 && !down[y][x]) nbs.push([y + 1, x]);
+    if (y > 0 && !down[y - 1][x]) nbs.push([y - 1, x]);
+    for (const [a, b] of nbs) if (prev[key(a, b)] === undefined) { prev[key(a, b)] = key(y, x); q.push([a, b]); }
+  }
+  const cells = []; let k = key(R - 1, C - 1);
+  while (k !== -1 && k !== undefined) { cells.unshift(k); k = prev[k]; }
+  const ctr = k => [x0 + (k % C + .5) * cs, y0 + (Math.floor(k / C) + .5) * cs];
+  const path = poly([[x0 - 70, y0 + cs / 2], ...cells.map(ctr), [x0 + C * cs + 90, y0 + (R - .5) * cs]]);
+  return { W: Wl, exit, path, ex: x0 + C * cs, ey: y0 + (R - .5) * cs };
+})();
+function drawMaze(prog, el = 99, openAt = 1e9) {
+  MZ.W.forEach((w, i) => { const s = i / MZ.W.length * .8; S(w, ramp(prog, s, s + .2), { w: 3 }); });
+  S(MZ.exit, Math.min(prog, 1 - ramp(el, openAt, openAt + .5)), { w: 3 });
+}
+
+const ARROW = [];
+for (let i = 0; i < 22; i++) ARROW.push([450 + i / 21 * 640, 460]);
+for (let i = 0; i < 7; i++) ARROW.push([1150 - i / 6 * 130, 460 - i / 6 * 120]);
+for (let i = 0; i < 7; i++) ARROW.push([1150 - i / 6 * 130, 460 + i / 6 * 120]);
+
+function blob(cx, cy, r, seed, k = 1) {
+  const c = [];
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, rr = r * (1 + (rnd(seed + i) - .5) * .5) * k; c.push([cx + Math.cos(a) * rr * 1.4, cy + Math.sin(a) * rr * .8]); }
+  c.push(c[0], c[1]);
+  return crv(c, 8);
+}
+
+function pillar(x, prog, label, lp) {
+  S(rectP(x - 85, 680, 170, 24, x), ramp(prog, 0, .2), { w: 3.5 });
+  S(seg(x - 55, 680, x - 55, 330, x + 1), ramp(prog, .15, .6), { w: 3.5 });
+  S(seg(x + 55, 680, x + 55, 330, x + 2), ramp(prog, .15, .6), { w: 3.5 });
+  S(seg(x - 18, 670, x - 18, 340, x + 3), ramp(prog, .3, .7), { w: 2, a: .5 });
+  S(seg(x + 18, 670, x + 18, 340, x + 4), ramp(prog, .3, .7), { w: 2, a: .5 });
+  S(rectP(x - 85, 306, 170, 24, x + 5), ramp(prog, .6, .85), { w: 3.5 });
+  if (label) T(label, x, 262, 46, lp, { f: HAND });
+}
+const PILLARS = [[460, '{ k : v }'], [800, 'Counter'], [1140, 'map']];
+
+function drawRoad(P, el = 0) {
+  const VX = 800, VY = 360, n = 14;
+  S(seg(VX - 728, 880, VX - 8, VY + 6, 1), ramp(P, 0, .5), { w: 4 });
+  S(seg(VX + 728, 880, VX + 8, VY + 6, 2), ramp(P, 0, .5), { w: 4 });
+  for (let i = 0; i < n; i++) {
+    const sc = 1 / (1 + i * .55), y = VY + 520 * sc, hw = (y - VY) * 1.4;
+    S(seg(VX - hw, y, VX + hw, y, i + 5), ramp(P, .1 + i / n * .8, .16 + i / n * .8), { w: Math.max(1.5, 6 * sc) });
+    if (i < 5) T(['for', 'if', 'print', 'return', 'while'][i], VX - hw * .45, y - 22 * sc, 40 * sc, ramp(P, .15 + i / n * .8, .25 + i / n * .8), { f: HAND, a: .8 });
+  }
+  alpha(.6 * ramp(P, .6, 1), () => {
+    S(ellP(VX, VY - 40, 42, 42), 1, { w: 3 });
+    for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2 + el * .2; S(seg(VX + Math.cos(a) * 55, VY - 40 + Math.sin(a) * 55, VX + Math.cos(a) * 75, VY - 40 + Math.sin(a) * 75), 1, { w: 2, single: true }); }
+  });
+}
+
+function waveLine(y, amp, t, k = 0, x0 = -100, x1 = 1700) {
+  const p = []; for (let x = x0; x <= x1; x += 20) p.push([x, y + Math.sin(x / 80 - t * 2 + k) * amp]); return p;
+}
+
+// ============================================================
+// 分鏡（每個函式畫一個鏡頭；g.el = 鏡頭內經過秒數，g.dur = 鏡頭長度）
+// ============================================================
+const MELODY = [0, 2, 4, 5, 4, 2, 7, 9, 7, 4, 5, 2, 0, 4, 7, 11];
+
+function sIntro(g) {
+  const { el, t } = g, step = 60 / BPM / 1.2, k = Math.floor((el - 6.5) / step), fr = ((el - 6.5) / step) % 1;
+  piano(800, 380, 600, 220, { prog: er(el, .5, 6), press: i => el > 6.5 && MELODY[k % MELODY.length] === i ? 1 - fr : 0 });
+  noteField(t, { x: 1010, y: 70, w: 260, h: 260, n: 9, seed: 3, a: ramp(el, 3, 6) });
+  T('APCS之歌', 800, 650, 96, er(el, 5.5, 8.5), { c: INK });
+  T('給映頤的一首歌', 800, 730, 32, er(el, 8, 10), { c: INK, a: .8 });
+  if (el > 7) whale(lerp(-200, 1800, ramp(el, 7, 7 + Math.max(8, g.dur - 7))), 150, 60, { a: .4 });
+}
+
+function sIfElse(g) {
+  const { el } = g;
+  const main = seg(150, 460, 700, 460, 1);
+  const up = crv([[700, 460], [850, 440], [1000, 330], [1420, 260]]);
+  const dn = crv([[700, 460], [850, 480], [1000, 590], [1420, 660]]);
+  S(main, er(el, 0, 1.4), { w: 4 }); S(up, er(el, 1.2, 2.6), { w: 4 }); S(dn, er(el, 1.2, 2.6), { w: 4 });
+  S(poly([[700, 420], [740, 460], [700, 500], [660, 460], [700, 418]]), er(el, 1, 1.6), { w: 3 });
+  T('?', 700, 462, 40, ramp(el, 1.5, 1.8), { f: HAND });
+  T('if', 1080, 290, 70, ramp(el, 2.4, 3), { f: HAND });
+  T('else', 1080, 660, 70, ramp(el, 2.8, 3.4), { f: HAND });
+  const pos = along([...main, ...up], er(el, 3, Math.max(4, g.dur - .3)));
+  whale(pos.x, pos.y - 34, 48, { rot: pos.a, prog: ramp(el, 3, 3.6) });
+}
+
+function sArrow(g) {
+  const { el } = g;
+  ARROW.forEach((tg, i) => {
+    const sx = 150 + rnd(i * 3.1) * 1300, sy = 120 + rnd(i * 5.7) * 600;
+    const u = er(el, .3 + rnd(i) * .8, 2.5 + rnd(i + 9) * 1.2);
+    const x = lerp(sx, tg[0], u), y = lerp(sy, tg[1], u);
+    if (i % 4 === 0) note(x, y + 8, 28, i % 3); else S(ellP(x, y, 7, 7), 1, { w: 2.5, single: true });
+  });
+  [[300, 250], [1250, 220], [600, 700]].forEach(([x, y], i) => T('?', x, y, 60 + i * 10, 1, { f: HAND, a: 1 - ramp(el, .5, 2) }));
+  alpha(.55, () => { S(seg(450, 460, 1150, 460, 2), er(el, 3.6, 4.6), { w: 3 }); S(poly([[1020, 340], [1150, 460], [1020, 580]]), er(el, 4.2, 5), { w: 3 }); });
+}
+
+function sFor(g) {
+  const { el } = g, n = 20, w = 1500, h = 150, cy = 570, kw = w / n, x0 = 800 - w / 2;
+  const sd = Math.max(.35, 60 / BPM), raw = (el - 1.6) / sd, k = Math.floor(raw), fr = raw - k, kk = clamp(k, 0, n - 1);
+  piano(800, cy, w, h, { n, prog: er(el, 0, 1.6), lw: 3, press: i => k < 0 ? 0 : i === kk ? 1 - fr * .6 : (i < kk ? .15 : 0) });
+  for (let j = Math.max(0, kk - 2); j <= kk && k >= 0; j++) {
+    const age = el - 1.6 - j * sd; if (age < 0) continue;
+    const r = 20 + age * 60;
+    S(ellP(x0 + (j + .5) * kw, cy - h / 2 - 12, r, r * .28, 0, 1.02), 1, { w: 2, a: clamp(1 - age / 1.4), single: true });
+  }
+  if (k >= 0) whale(x0 + (kk + .5) * kw, cy - h / 2 - 95 + Math.sin(el * 4) * 6, 58, { rot: Math.sin(el * 4) * .08 });
+  T('for i in range(n):', 800, 170, 66, er(el, .3, 1.8), { f: HAND });
+  if (k >= 0) T('i = ' + kk, 800, 255, 54, 1, { f: HAND, a: .9 });
+}
+
+const INDENT = [[0, .5], [1, .6], [2, .45], [2, .55], [1, .35], [2, .5], [0, .3]];
+function sIndent(g) {
+  const { el, t } = g, wv = er(el, 4.5, 7);
+  for (let j = 1; j <= 2; j++) S(seg(360 + j * 90 - 30, 230, 360 + j * 90 - 30, 690, j), er(el, 2.5, 3.5), { w: 2, a: .4, dash: [6, 12], single: true });
+  INDENT.forEach(([ind, lf], i) => {
+    const y = 240 + i * 70, x0 = 360 + ind * 90, len = 640 * lf, t0 = .2 + i * .45;
+    if (i === 0) { T('def solve():', x0, y, 52, er(el, t0, t0 + .8), { f: HAND, al: 'left' }); return; }
+    const p = []; for (let x = 0; x <= len; x += 12) p.push([x0 + x, y + Math.sin((x0 + x) / 90 + t * 1.5 + i) * wv * 12]);
+    S(p, er(el, t0, t0 + .5), { w: 5 });
+  });
+}
+
+function sFog(g) {
+  const { el, t } = g, grow = ramp(el, 0, g.dur * .85);
+  alpha(.45, () => { for (let i = 0; i < 5; i++) S(waveLine(300 + i * 80, 10, t, i, 300, 1300), 1, { w: 4 }); });
+  whale(800, 470, 200, { a: .6 * (1 - grow) });
+  drawFog(grow);
+  ctx.fillStyle = `rgba(235,242,248,${.35 * grow})`; ctx.fillRect(-800, -800, 3200, 2500);
+}
+
+function sPrint(g) {
+  const { el, t } = g, R = er(el, 3.6, Math.max(5, g.dur - .5)) * 1500;
+  const glow = ctx.createRadialGradient(800, 470, 0, 800, 470, 600);
+  glow.addColorStop(0, `rgba(255,255,255,${.35 * ramp(el, 3, 5)})`); glow.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  drawFog(1, 912, 395, R);
+  ctx.fillStyle = `rgba(235,242,248,${.35 * (1 - ramp(el, 3.6, 6))})`; ctx.fillRect(-800, -800, 3200, 2500);
+  const br = 1 + .02 * Math.sin(t * 1.6);
+  whale(800, 470, 250 * br, { prog: er(el, 0, 2.6), rot: Math.sin(t * .8) * .03 });
+  spout(912, 392, 90, er(el, 2.6, 3.4));
+  T('print("映頤呆呆!")', 920, 210, 64, ramp(el, 3, 4.5), { f: HAND, wt: 700 });
+}
+
+const GRID = { cols: 8, rows: 4, cs: 100, x0: 400, y0: 220 };
+function cellRect(i) { const c = i % GRID.cols, r = Math.floor(i / GRID.cols); return [GRID.x0 + c * GRID.cs, GRID.y0 + r * GRID.cs]; }
+function checkP(x, y, s) { return poly([[x - s * .35, y], [x - s * .1, y + s * .28], [x + s * .38, y - s * .3]]); }
+function sBrute(g) {
+  const { el } = g, N = GRID.cols * GRID.rows, cd = Math.max(.12, (g.dur - 2) / N), k = Math.floor((el - 1.6) / cd), fr = ((el - 1.6) / cd) % 1;
+  T('→', 800, 165, 70, ramp(el, 1, 1.5), { f: HAND }); T('↓', 340, 420, 70, ramp(el, 1.2, 1.7), { f: HAND });
+  for (let i = 0; i < N; i++) {
+    const [x, y] = cellRect(i);
+    if (i === k) { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(x + 3, y + 3, GRID.cs - 6, GRID.cs - 6); }
+    S(rectP(x, y, GRID.cs, GRID.cs, i), er(el, i / N * 1.2, i / N * 1.2 + .4), { w: 2.5, single: true });
+    if (i < k) S(checkP(x + 50, y + 50, 60), 1, { w: 3.5 });
+    else if (i === k) S(checkP(x + 50, y + 50, 60), fr * 2, { w: 3.5 });
+  }
+  if (k >= 0 && k < N) { const [x, y] = cellRect(k); whale(x + 50, y - 10, 34, { rot: Math.sin(el * 5) * .1 }); }
+}
+function sErase(g) {
+  const { el } = g, N = GRID.cols * GRID.rows, d = Math.max(.08, (g.dur - 1.2) / N), k = Math.floor((el - .3) / d);
+  for (let i = 0; i < N; i++) {
+    const [x, y] = cellRect(i);
+    if (i >= k) { S(rectP(x, y, GRID.cs, GRID.cs, i), 1, { w: 2.5, single: true }); S(checkP(x + 50, y + 50, 60), 1, { w: 3.5 }); continue; }
+    const age = el - .3 - i * d;
+    note(x + 50 + Math.sin(age * 3 + i) * 15, y + 50 - age * 130, 30, i % 3, { a: 1 - age / 1.6 });
+  }
+}
+
+function sMatrix(g) {
+  const { el, t } = g, ang = er(el, 2, 3.6) * Math.PI / 2, tang = ramp(el, 3.8, g.dur);
+  S(poly([[640, 260], [610, 260], [610, 540], [640, 540]]), er(el, 0, .8), { w: 4 });
+  S(poly([[960, 260], [990, 260], [990, 540], [960, 540]]), er(el, 0, .8), { w: 4 });
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+    const dx = (c - 1) * 90, dy = (r - 1) * 90, x = 800 + dx * Math.cos(ang) - dy * Math.sin(ang), y = 400 + dx * Math.sin(ang) + dy * Math.cos(ang);
+    T(String(r * 3 + c + 1), x, y, 56, ramp(el, .4 + (r * 3 + c) * .1, .7 + (r * 3 + c) * .1), { f: HAND });
+  }
+  T('(i, j)', 330, 220, 46, ramp(el, .8, 1.6), { f: HAND });
+  T('(j, n−1−i)', 1260, 620, 46, ramp(el, 3.4, 4.2), { f: HAND });
+  if (tang > 0) {
+    S(seg(250, 400, 1350, 400, 3), 1, { w: 2.5, j: 1.2 + tang * 18, a: .7 });
+    S(seg(800, 120, 800, 720, 4), 1, { w: 2.5, j: 1.2 + tang * 18, a: .7 });
+    for (let k = 0; k < 4; k++) {
+      const p = []; for (let a = 0; a <= Math.PI * 2; a += .05) p.push([800 + Math.sin(a * (2 + k) + k + t * .3) * (320 - k * 30), 400 + Math.sin(a * (3 + k % 2)) * (220 - k * 20)]);
+      S(p, tang, { w: 2, a: .45, single: true });
+    }
+  }
+}
+
+function sEye(g) {
+  const { el } = g, open = er(el, g.dur - 1.8, g.dur - .6), A = 1 - er(el, 1.5, g.dur - 2);
+  S(crv([[620, 300], [800, 370], [980, 300]]), er(el, 0, 1.2), { w: 4 });
+  if (open > 0) S(crv([[620, 300], [800, lerp(370, 220, open)], [980, 300]]), 1, { w: 4 });
+  alpha(1 - open, () => { for (let i = 0; i < 5; i++) { const x = 680 + i * 60, y = 300 + Math.sin((x - 620) / 360 * Math.PI) * 52; S(seg(x, y, x + (i - 2) * 8, y + 32), ramp(el, .9 + i * .08, 1.2 + i * .08), { w: 3, single: true }); } });
+  alpha(open, () => { F(ellP(800, 300, 38, 38, 0, 1), DARK); spark(818, 288, 6); });
+  for (let i = 0; i < 4; i++) {
+    const hp = [], vp = [];
+    for (let k = 0; k <= 30; k++) { const u = k / 30; hp.push([710 + u * 180, 520 + i * 60 + noise(i * 9 + k * .3) * A * 70]); vp.push([710 + i * 60 + noise(i * 7 + 40 + k * .3) * A * 70, 520 + u * 180]); }
+    S(hp, ramp(el, .3, 1.3), { w: 2.5, a: .85 }); S(vp, ramp(el, .3, 1.3), { w: 2.5, a: .85 });
+  }
+  const R = [[7, 4, 1], [8, 5, 2], [9, 6, 3]];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) T(String(R[r][c]), 740 + c * 60, 550 + r * 60, 40, ramp(el, g.dur - 2.5, g.dur - 1), { f: HAND });
+}
+
+function sSprout(g) {
+  const { el, t } = g, grow = er(el, 1.5, Math.max(2.5, g.dur - .8));
+  // 風：由左往右吹，捲曲的線頭朝右
+  for (let k = 0; k < 4; k++) {
+    const y = 140 + k * 65, x = ((t * 160 + k * 470) % 2100) - 250;
+    const a = .85 * clamp(Math.min((x + 250) / 300, (1850 - x) / 300));
+    S(crv([[x - 320, y + 6], [x - 200, y - 8], [x - 80, y + 4], [x, y], [x + 45, y - 12], [x + 55, y - 42], [x + 28, y - 55], [x + 10, y - 36], [x + 28, y - 24]], 6), 1, { w: 2.5, a });
+  }
+  T('→', 1460, 175, 64, er(el, .3, 1), { f: HAND, a: .8 });
+  // 水：從上往下流，虛線一路往下移動
+  [230, 320, 1280, 1370].forEach((x0, k) => {
+    const p = []; for (let y = 90; y <= 800; y += 15) p.push([x0 + Math.sin(y / 70 + k) * 12, y]);
+    S(p, er(el, 0, 1.2), { w: 3, a: .8, single: true, dash: [26, 18], dashOff: -t * 120 });
+    for (let d = 0; d < 3; d++) {
+      const ph = ((t * .45 + d / 3 + k * .21) % 1), y = 90 + ph * 710, x = x0 + Math.sin(y / 70 + k) * 12 + 16;
+      S(crv([[x, y - 14], [x - 6, y], [x, y + 6], [x + 6, y], [x, y - 14]], 3), 1, { w: 2, a: Math.sin(Math.PI * ph), single: true });
+    }
+  });
+  T('↓', 275, 845, 60, er(el, .6, 1.3), { f: HAND, a: .8 });
+  T('↓', 1325, 845, 60, er(el, .6, 1.3), { f: HAND, a: .8 });
+  S(seg(560, 696, 1040, 696, 3), er(el, 0, 1), { w: 2.5, a: .7 });
+  S(ellP(800, 692, 14, 9, 0, 1.02), er(el, .4, 1.2), { w: 3 });
+  if (el < 2.5) spark(800, 660, 14, { a: ramp(el, .8, 1.3) * (1 - ramp(el, 2, 2.5)) });
+  TREE.forEach(b => {
+    const p = ramp(grow * 6, b.d, b.d + 1);
+    S(b.pts, p, { w: Math.max(1.5, 6 - b.d) });
+    if (b.d === 5 && p >= 1) S(ellP(b.ex, b.ey, 9, 6, 0, 1.02, b.ex), 1, { w: 2, single: true });
+  });
+}
+
+function sMaze(g) {
+  const { el } = g, openAt = g.dur - 1.6;
+  drawMaze(er(el, 0, 2), el, openAt);
+  S(MZ.path, er(el, 2, g.dur - .3), { w: 3, dash: [12, 12], single: true });
+  const pos = along(MZ.path, er(el, 2, g.dur - .3));
+  if (el > 2) whale(pos.x, pos.y, 36, { rot: pos.a });
+  if (el > openAt) for (let i = 0; i < 4; i++) spark(MZ.ex + 40 + i * 30, MZ.ey - 40 + (i % 2) * 70, 10 + Math.sin(el * 6 + i) * 4, { a: ramp(el, openAt, openAt + .4) });
+}
+
+function pianoChorus(el, t, start, big) {
+  const step = 60 / BPM / 2, k = Math.floor((el - start) / step), fr = ((el - start) / step) % 1;
+  piano(800, 450, 640, 230, { prog: er(el, start - 1.4, start), press: i => {
+    if (el < start) return 0;
+    if (el < start + 1.6) { const g = 11 - Math.floor((el - start) * 7.5); return i === g ? 1 : 0; }
+    return MELODY[(k * 3) % MELODY.length] === i ? 1 - fr : 0;
+  } });
+  burst(800, 330, el - start - 1.6, { n: big ? 30 : 18, seed: 5 });
+  noteField(t, { x: 1080, y: 80, w: 300, h: 300, n: big ? 12 : 8, seed: 11, a: ramp(el, start + 1.6, start + 3) });
+}
+function sReset(g) {
+  const { el, t, v } = g, back = 1 - er(el, 0, 1.8);
+  if (back > 0) { if (v === 2) drawRoad(back, el); else drawMaze(back); }
+  T('reset()', 800, 170, 76, ramp(el, .4, 1.2), { f: HAND, wt: 700 });
+  pianoChorus(el, t, 3, v === 2);
+}
+
+function sUpdate(g) {
+  const { el, t, v } = g, cols = 8, cs = 110, x0 = 800 - cols * cs / 2, y0 = 330, bd = 60 / BPM;
+  const b = Math.floor((el - 1) / bd), fr = ((el - 1) / bd) % 1;
+  T('update()', 800, 190, 76, ramp(el, .2, 1), { f: HAND, wt: 700 });
+  for (let i = 0; i < 16; i++) {
+    const x = x0 + (i % cols) * cs, y = y0 + Math.floor(i / cols) * cs;
+    S(rectP(x, y, cs, cs, i), er(el, i * .05, i * .05 + .5), { w: 3, single: true });
+    const fp = i < b ? 1 : i === b ? fr * 1.5 : 0;
+    if (i === b) { ctx.fillStyle = `rgba(255,255,255,${.4 * (1 - fr)})`; ctx.fillRect(x + 3, y + 3, cs - 6, cs - 6); }
+    if (fp > 0) { const h = []; for (let s = 16; s < cs * 2; s += 16) h.push(...seg(x + Math.min(s, cs), y + Math.max(0, s - cs), x + Math.max(0, s - cs), y + Math.min(s, cs), s)); S(h, fp, { w: 1.8, single: true, a: .85 }); }
+    const age = el - 1 - i * bd;
+    if (age > 0 && age < 1.4) { note(x + cs / 2, y - age * 90, 26, i % 3, { a: 1 - age / 1.4 }); if (v === 2) spark(x + cs - 12, y + 12, 10, { a: 1 - age / 1.4 }); }
+  }
+}
+
+function sList(g) {
+  const { el, v } = g, half = g.half, xs = [480, 800, 1120];
+  xs.forEach((x, i) => whale(x, 300 + Math.sin(el * 3 + i) * 10 * (1 + g.beat.pulse), 85, { prog: er(el, i * .5, i * .5 + 1.4), ph: i }));
+  S(poly([[350, 500], [320, 500], [320, 640], [350, 640]]), er(el, 1, 1.6), { w: 4 });
+  S(poly([[1250, 500], [1280, 500], [1280, 640], [1250, 640]]), er(el, 1, 1.6), { w: 4 });
+  T(',', 640, 600, 60, ramp(el, 1.4, 1.6), { f: HAND }); T(',', 960, 600, 60, ramp(el, 1.4, 1.6), { f: HAND });
+  xs.forEach((x, i) => {
+    S(seg(x - 80, 610, x + 80, 610, i), er(el, 1.2 + i * .15, 1.6 + i * .15), { w: 3 });
+    const ft = v === 2 ? 1.6 + i * .2 : half + i * .6;
+    T(['P1', 'P2', 'P3'][i], x, 565, 66, ramp(el, ft, ft + .4), { f: HAND, wt: 700 });
+    if (el > ft) S(seg(x, 360, x, 520, i + 9), ramp(el, ft, ft + .3), { w: 2, dash: [8, 10], single: true, a: .7 });
+    if (v === 2) { const ct = half + i * .7; S(checkP(x + 100, 540, 60), er(el, ct, ct + .4), { w: 5 }); if (el > ct) spark(x + 130, 500, 10, { a: 1 - ramp(el, ct + .3, ct + 1.5) }); }
+  });
+}
+
+function sScore(g) {
+  const { el, t, v } = g, bt = g.half, big = v === 2, H2 = big ? 520 : 420;
+  const beats = Math.max(0, Math.floor(el / (60 / BPM)));
+  [[560, 'score'], [1040, 'beat']].forEach(([x, lab], i) => {
+    const sc = 1 + .08 * g.beat.pulse;
+    ctx.save(); ctx.translate(x, 175); ctx.scale(sc, sc);
+    S(rectP(-110, -45, 220, 90, i + 20), er(el, 0, .8), { w: 3 });
+    T(lab, 0, -72, 34, ramp(el, .3, .8), { f: HAND, a: .85 });
+    const val = i ? String(g.beat.n + 1) : (el < bt ? String(Math.min(90, beats * 10)) : (big ? 'MAX!' : '100!'));
+    T(val, 0, 2, 58, ramp(el, .6, 1), { f: HAND, wt: 700 });
+    ctx.restore();
+  });
+  S(waveLine(620, 8, t), 1, { w: 3.5 }); S(waveLine(665, 6, t, 2), 1, { w: 2.5, a: .55 });
+  const J = (el - (bt - .7)) / 2.1;
+  if (J < 0) whale(lerp(300, 540, ramp(el, 0, bt)), 735, 120, { a: .5 });
+  else if (J <= 1) {
+    const x = lerp(560, 1060, J), y = 760 - 4 * H2 * J * (1 - J), dy = -4 * H2 * (1 - 2 * J), rot = Math.atan2(dy, 500);
+    whale(x, y, big ? 170 : 140, { rot, tail: Math.sin(el * 8) * .3 });
+  } else {
+    whale(lerp(1060, 1300, ramp(el, bt + 1.4, g.dur)), 740, 120, { a: .5 });
+  }
+  const splash = (sx, age) => { if (age < 0 || age > 1) return; for (let i = 0; i < 7; i++) { const a = -Math.PI / 2 + (i - 3) * .32, v0 = 260 + rnd(i) * 120; const pts = []; for (let k = 0; k <= 8; k++) { const tt = age * k / 8; pts.push([sx + Math.cos(a) * v0 * tt, 620 + Math.sin(a) * v0 * tt + 500 * tt * tt]); } S(pts, 1, { w: 2.5, a: 1 - age, single: true }); } };
+  splash(620, el - (bt - .4)); splash(1000, el - (bt + 1.05));
+  for (let k = 0; k < 3; k++) { const age = el - (bt + 1.1) - k * .3; if (age > 0 && age < 2) S(ellP(1020, 625, 40 + age * 140, 10 + age * 25, 0, 1.02), 1, { w: 2, a: 1 - age / 2, single: true }); }
+  burst(810, 760 - H2, el - (bt + .35), { n: big ? 44 : 26, v: big ? 700 : 520, seed: big ? 9 : 4 });
+  if (big) burst(810, 760 - H2, el - (bt + .75), { n: 24, v: 420, seed: 21 });
+  if (big) { const a = .5 * (1 - ramp(el, bt + .35, bt + 1)); if (el > bt + .35 && a > 0) { ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillRect(-800, -800, 3200, 2500); } }
+}
+
+// 原創的線稿小恐龍（長脖子、圓肚子，頭朝右；cx, cy 是腳底中心）
+function dino(cx, cy, s, o = {}) {
+  const p = o.prog ?? 1, ph = o.walk ?? 0, wag = Math.sin(curT * 3) * .06, bob = o.walk !== undefined ? Math.abs(Math.sin(ph)) * .03 : 0;
+  const M = ([x, y]) => [cx + x * s, cy + (y - bob) * s];
+  const body = crv([[-0.5, -0.33], [-0.25, -0.58], [0.15, -0.6], [0.42, -0.42], [0.42, -0.2], [0.1, -0.12], [-0.35, -0.14], [-0.52, -0.25], [-0.5, -0.33]].map(M), 5);
+  const neck = crv([[0.28, -0.52], [0.4, -0.8], [0.5, -1.02], [0.68, -1.1], [0.86, -1.04], [0.84, -0.94], [0.62, -0.9], [0.52, -0.72], [0.42, -0.38]].map(M), 5);
+  const tail = crv([[-0.48, -0.3], [-0.75, -0.3], [-1.0, -0.38 + wag], [-0.82, -0.22], [-0.5, -0.18]].map(M), 5);
+  alpha(o.a ?? 1, () => {
+    if (p > .9) { F(body, 'rgba(255,255,255,.1)'); F(neck, 'rgba(255,255,255,.1)'); }
+    S(body, ramp(p, 0, .4), { w: 3 });
+    S(neck, ramp(p, .25, .55), { w: 3 });
+    S(tail, ramp(p, .4, .65), { w: 3 });
+    [[0.28, 0], [0.12, Math.PI], [-0.2, Math.PI], [-0.36, 0]].forEach(([lx, off], i) => {
+      const sw = o.walk !== undefined ? Math.sin(ph + off) * .07 : 0;
+      S(poly([[lx, -0.16], [lx + sw, 0], [lx + sw + .08, 0]].map(M)), ramp(p, .55 + i * .05, .75 + i * .05), { w: 3, single: true });
+    });
+    [[-0.2, -0.5], [0.02, -0.55], [0.22, -0.48]].forEach(([x, y]) => { const [a, b] = M([x, y]); S(ellP(a, b, s * .04, s * .03), ramp(p, .8, .95), { w: 2, single: true }); });
+    if (p > .85) {
+      const e = M([0.7, -1.01]); ctx.beginPath(); ctx.arc(e[0], e[1], Math.max(2, s * .025), 0, 7); ctx.fillStyle = DARK; ctx.fill();
+      S(crv([[0.72, -0.95], [0.78, -0.93], [0.83, -0.96]].map(M), 3), 1, { w: 2, single: true });
+    }
+  });
+}
+
+// 手繪矩陣：R 列 C 行，每格寫上 ch(r, c)；cellP(r, c) 回傳該格出現的進度
+function matrix(x0, y0, R, C, cs, cellP, ch, o = {}) {
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+    const p = cellP(r, c); if (p <= 0) continue;
+    const x = x0 + c * cs, y = y0 + r * cs;
+    S(rectP(x, y, cs, cs, r * C + c), ramp(p, 0, .6), { w: 2.5, single: true, a: o.a ?? 1 });
+    T(ch(r, c), x + cs / 2, y + cs / 2, cs * .55, ramp(p, .4, 1), { f: HAND, wt: 700, a: o.a ?? 1 });
+  }
+}
+
+const MAP_H = 'map_h = [[D for i in range(C)] for j in range(R)]';
+const MAP_DINO = 'map_dino = [[0 for i in range(C)] for j in range(R)]';
+
+function sMap(g) {
+  const { el } = g, half = g.half, R = 5, C = 8, cs = 72, x0 = 800 - C * cs / 2 + 90, y0 = 270;
+  // 「中級的戰場」：小恐龍走進畫面
+  const u = er(el, 0, Math.max(1, half - .2));
+  dino(lerp(-150, 260, u), 690, 170, { prog: er(el, 0, 1.2), walk: u < 1 ? el * 7 : undefined });
+  T('Level 2', 230, 140, 60, ramp(el, .3, 1), { f: HAND, wt: 700 });
+  // 「常常像一張大地圖」：程式碼寫出來，再展開成一大張 D 矩陣
+  T(MAP_H, 800, 200, 40, er(el, half - .4, half + 1.2), { f: HAND });
+  matrix(x0, y0, R, C, cs, (r, c) => ramp(el, half + .6 + (r * C + c) * .03, half + 1 + (r * C + c) * .03), () => 'D');
+  T('R', x0 - 34, y0 + R * cs / 2, 40, ramp(el, half + 1.6, half + 2), { f: HAND, a: .8 });
+  T('C', x0 + C * cs / 2, y0 + R * cs + 30, 40, ramp(el, half + 1.6, half + 2), { f: HAND, a: .8 });
+}
+
+function sPave(g) {
+  const { el } = g, half = g.half, R = 4, C = 7, cs = 72, x0 = 230, y0 = 300, ground = y0 + R * cs + 150;
+  T(MAP_H, 800, 120, 32, 1, { f: HAND, a: .45 });
+  T(MAP_DINO, 800, 185, 40, er(el, 0, 1.4), { f: HAND });
+  // 「有時要自己鋪路」：小恐龍往右走，走到哪一行，0 就一格一格鋪到哪裡
+  const u = er(el, .8, Math.max(1.6, half - .1)), dx = lerp(x0 - 90, x0 + C * cs + 40, u);
+  // 「有時答案就在內建裡駐足」：用內建的 map(int, input().split()) 讀座標，小恐龍住進自己的 map_dino
+  const sStart = half + 1.9, d = Math.max(.6, (g.dur - sStart - .6) / DINO_IN.length);
+  const done = j => el >= sStart + j * d, cur = Math.floor((el - sStart) / d);
+  const count = (r, c) => DINO_IN.filter(([a, b], j) => done(j) && a === r && b === c).length;
+  matrix(x0, y0, R, C, cs, (r, c) => ramp(dx, x0 + c * cs - 10 + r * 12, x0 + c * cs + 50 + r * 12), (r, c) => count(r, c) ? '' : '0');
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+    const n = count(r, c); if (!n) continue;
+    const x = x0 + c * cs, y = y0 + r * cs, last = Math.max(...DINO_IN.map(([a, b], j) => done(j) && a === r && b === c ? j : -1));
+    const pop = 1 + .4 * (1 - ramp(el - sStart - last * d, 0, .3));
+    ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x + 3, y + 3, cs - 6, cs - 6);
+    dino(x + cs / 2 + 4, y + cs - 6, 34 * pop);
+    T(String(n), x + cs - 13, y + 15, 24, 1, { f: HAND, wt: 700 });
+  }
+  DINO_CODE.forEach((line, i) => {
+    const y = 290 + i * 46;
+    T(line, 840, y, 34, er(el, half + i * .35, half + .5 + i * .35), { f: HAND, al: 'left' });
+  });
+  if (el > sStart && cur < DINO_IN.length) {
+    T('→', 815, 290 + 2 * 46, 36, 1, { f: HAND, al: 'right' });
+    T(`a, b = ${DINO_IN[cur][0]} ${DINO_IN[cur][1]}`, 1060, 540, 40, ramp(el - sStart - cur * d, 0, .3), { f: HAND, wt: 700 });
+  }
+  const placed = DINO_IN.filter((_, j) => done(j)).length;
+  if (el > sStart) T(`dino = ${placed}`, 1350, 540, 40, 1, { f: HAND, wt: 700 });
+  // 大恐龍走到程式碼下方停下來看
+  const v = er(el, half, half + 1.2), restX = lerp(x0 + C * cs + 40, 1000, v);
+  const walking = (u > 0 && u < 1) || (v > 0 && v < 1);
+  dino(el < half ? dx : restX, ground, 150, { prog: er(el, 0, 1), walk: walking ? el * 7 : undefined });
+}
+const DINO_CODE = ['K = int(input())', 'for i in range(K):', '    a, b = map(int, input().split())', '    map_dino[a][b] += 1', '    dino += 1'];
+const DINO_IN = [[1, 2], [3, 5], [0, 4], [1, 2], [2, 0]];
+
+function sSort(g) {
+  const { el } = g, R = [34, 58, 22, 46, 70, 28, 52, 40], sorted = R.map((r, i) => i).sort((a, b) => R[a] - R[b]);
+  S(seg(220, 560, 1380, 560, 7), er(el, 0, 1), { w: 3 });
+  R.forEach((r, i) => {
+    const s1 = sorted.indexOf(i), u = er(el, 2 + i * .15, 4.5 + i * .15);
+    const x = lerp(290 + i * 145, 290 + s1 * 145, u), y = 560 - r - Math.sin(Math.PI * u) * (s1 > i ? 80 : -60);
+    S(ellP(x, y, r, r), er(el, .1 * i, .1 * i + .6), { w: 3, seed: i });
+  });
+  T('sorted()', 800, 200, 76, ramp(el, .5, 1.3), { f: HAND, wt: 700 });
+  T('小  →  大', 800, 640, 46, ramp(el, 5, 6));
+}
+
+function sPillars(g) {
+  const { el } = g;
+  PILLARS.forEach(([x, lab], i) => pillar(x, er(el, i * .8, i * .8 + 1.4), lab, ramp(el, i * .8 + 1.2, i * .8 + 1.8)));
+  if (el > 3) {
+    const u = er(el, 3, g.dur - .2), x = lerp(150, 1450, u), y = 500 + Math.sin(u * Math.PI * 3) * 90, dy = Math.cos(u * Math.PI * 3) * 90 * Math.PI * 3 / 1300;
+    whale(x, y, 70, { rot: Math.atan(dy) });
+  }
+}
+
+function sBackpack(g) {
+  const { el, t } = g, half = g.half, sh = er(el, 0, 2.2);
+  PILLARS.forEach(([x], i) => {
+    const px = lerp(x, 800 + (i - 1) * 40, sh), py = lerp(490, 470, sh), sc = lerp(1, .18, sh);
+    alpha(1 - ramp(sh, .8, 1), () => { ctx.save(); ctx.translate(px, py); ctx.scale(sc, sc); ctx.translate(-x, -490); pillar(x, 1); ctx.restore(); });
+  });
+  const bp = er(el, .6, 2.6);
+  S(crv([[700, 420], [690, 600], [710, 680], [890, 680], [910, 600], [900, 420], [800, 400], [700, 420]], 8), ramp(bp, 0, .5), { w: 4 });
+  S(crv([[700, 430], [800, 500], [900, 430]], 6), ramp(bp, .4, .7), { w: 3.5 });
+  S(rectP(745, 560, 110, 80, 51), ramp(bp, .6, .85), { w: 3 });
+  S(crv([[700, 450], [655, 540], [700, 640]], 6), ramp(bp, .7, .9), { w: 3 });
+  S(crv([[900, 450], [945, 540], [900, 640]], 6), ramp(bp, .7, .9), { w: 3 });
+  for (let i = 0; i < 5; i++) {
+    const tx = 800 + (i - 2) * 48, ty = 250 + Math.abs(i - 2) * 30;
+    S(crv([[800 + (i - 2) * 10, 410], [800 + (i - 2) * 30, 330], [tx, ty]], 6), er(el, half + i * .1, half + 1.2 + i * .1), { w: 2.5 });
+    const fp = er(el, half + 1 + i * .15, half + 2 + i * .15);
+    for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2 + i; S(ellP(tx + Math.cos(a) * 14, ty + Math.sin(a) * 14, 10, 10), fp, { w: 2, single: true }); }
+    if (fp >= 1) spark(tx + 30, ty - 25, 7 + Math.sin(t * 4 + i) * 3, { a: .9 });
+  }
+}
+
+function sCheck(g) {
+  const { el } = g, half = g.half;
+  const p = []; for (let i = 0; i <= 80; i++) { const a = -Math.PI / 2 + i / 80 * Math.PI * 1.94, r = 200 * (1 + noise(i * .12 + 3) * .09); p.push([800 + Math.cos(a) * r + i * .25, 420 + Math.sin(a) * r]); }
+  S(p, er(el, .2, 2.2), { w: 4, j: 2 });
+  S(crv([[690, 420], [770, 510], [940, 290]], 6), er(el, half, half + .5), { w: 10, j: .3 });
+  burst(940, 290, el - half - .5, { n: 14, v: 380, seed: 13 });
+}
+
+function sKeys(g) {
+  const { el, t } = g, m = er(el, 2.5, 4.5) * (1 - er(el, g.dur - 3, g.dur - 1)), sd = .9, kk = Math.floor(el / sd), fr = (el / sd) % 1;
+  const key = j => MELODY[j % MELODY.length];
+  piano(800, 400, 600, 220, { a: 1 - m, prog: er(el, 0, 2), press: i => i === key(kk) ? 1 - fr : 0 });
+  if (m > 0) keyboard(800, 400, 620, 240, { a: m, press: (key(kk) * 3) % 26 });
+  for (let j = Math.max(0, kk - 3); j <= kk; j++) { const age = el - j * sd; note(keyX(800, 600, 12, key(j)) + Math.sin(age * 2) * 10, 270 - age * 60, 26, j % 3, { a: 1 - age / 3 }); }
+  noteField(t, { x: 1010, y: 70, w: 260, h: 240, n: 6, seed: 3, a: .8 });
+  whale(lerp(150, 520, er(el, 0, g.dur)), 150, 55, { a: .45 });
+}
+
+function sBreath(g) {
+  const { el, t } = g, br = Math.sin(el / 4 * Math.PI * 2), sc = 1 + .03 * br;
+  ctx.save(); ctx.translate(800, 470); ctx.scale(sc, sc); ctx.translate(-800, -470);
+  S(ellP(800, 470, 420 + br * 30, 230 + br * 20), 1, { w: 2, a: .3, single: true });
+  whale(800, 480 + br * 12, 240, { prog: er(el, 0, 1.8) });
+  for (let i = 0; i < 8; i++) { const ph = (el * .5 + i / 8) % 1; S(ellP(912 + Math.sin(ph * 6 + i) * 18, 380 - ph * 220, 5 + i % 3 * 2, 5 + i % 3 * 2), 1, { w: 2, a: Math.sin(Math.PI * ph), single: true }); }
+  ctx.restore();
+  T('映頤', 800, 190, 120, er(el, .8, 3));
+}
+
+function sScreen(g) {
+  const { el } = g, zoom = lerp(.85, 1.25, er(el, 0, g.dur));
+  ctx.save(); ctx.translate(800, 380); ctx.scale(zoom, zoom); ctx.translate(-800, -380);
+  S(rectP(560, 220, 480, 300, 61), er(el, 0, 1.4), { w: 4 });
+  S(rectP(580, 240, 440, 260, 62), er(el, .6, 1.6), { w: 2, a: .5 });
+  S(seg(800, 520, 800, 580, 63), er(el, 1, 1.4), { w: 4 }); S(seg(720, 585, 880, 585, 64), er(el, 1.2, 1.6), { w: 4 });
+  T('while True:', 610, 290, 38, er(el, 1.2, 2.4), { f: HAND, al: 'left' });
+  T('keep_going()', 650, 345, 38, er(el, 2.2, 3.4), { f: HAND, al: 'left' });
+  if (el > 3.4 && Math.floor(el * 2) % 2 === 0) T('_', 655, 395, 38, 1, { f: HAND, al: 'left' });
+  ctx.restore();
+  whale(300, 620, 90, { prog: er(el, .4, 1.6), rot: -.12 });
+}
+
+function sSunrise(g) {
+  const { el, t } = g, half = g.half, u = er(el, .5, g.dur - .5), sy = lerp(640, 430, u);
+  S(seg(80, 560, 1520, 560, 71), er(el, 0, 1.2), { w: 3.5 });
+  ctx.save(); ctx.beginPath(); ctx.rect(-800, -800, 3200, 1358); ctx.clip();
+  S(ellP(800, sy, 90, 90), er(el, .3, 1.5), { w: 4 });
+  for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2 + t * .1; S(seg(800 + Math.cos(a) * 115, sy + Math.sin(a) * 115, 800 + Math.cos(a) * (150 + 15 * Math.sin(t * 2 + k)), sy + Math.sin(a) * (150 + 15 * Math.sin(t * 2 + k)), k), ramp(u, .2, .6), { w: 3, single: true }); }
+  ctx.restore();
+  for (let r = 0; r < 3; r++) for (let k = 0; k < 4; k++) { const x = 250 + k * 380 + r * 120 + Math.sin(t + r) * 20, y = 620 + r * 60; S(crv([[x - 40, y], [x - 20, y - 10], [x, y], [x + 20, y - 10], [x + 40, y]], 4), 1, { w: 2.5, a: .7 - r * .15, single: true }); }
+  T('?', 360, 330, 120, 1, { f: HAND, a: 1 - ramp(el, half - .3, half + .3) });
+  T('!', 360, 330, 120, 1, { f: HAND, wt: 700, a: ramp(el, half, half + .5) });
+}
+
+function sBridgeRoad(g) {
+  const { el } = g;
+  drawRoad(er(el, 0, g.dur * .7), el);
+  const u = er(el, 1.5, g.dur);
+  whale(800, lerp(720, 380, u), lerp(120, 22, u), { a: 1 - ramp(u, .85, 1) });
+}
+
+function sBubbles(g) {
+  const { el, t } = g;
+  INDENT.forEach(([ind], i) => {
+    if (i === 0) return;
+    const y = 220 + i * 70, x0 = 260 + ind * 80, len = 420, ti = 1 + i * .6;
+    alpha(1 - ramp(el, ti, ti + .6), () => S(seg(x0, y, x0 + len, y, i), er(el, i * .15, i * .15 + .5), { w: 5 }));
+    for (let j = 0; j < 5; j++) {
+      const age = el - ti; if (age < 0) continue;
+      const sp = 70 * (1 + rnd(i * 5 + j)), by = y - age * sp, bx = x0 + (j + .5) * len / 5 + Math.sin(age * 2 + j) * 12, r = 7 + rnd(i * 7 + j) * 10;
+      S(ellP(bx, by, r, r), 1, { w: 2, single: true, a: clamp(1 - (y - by) / 450) });
+    }
+  });
+}
+
+function sBugs(g) {
+  const { el, t } = g, ex = lerp(-200, 1800, er(el, .5, g.dur - .5));
+  for (let i = 0; i < 6; i++) {
+    const bx = 260 + i * 220 + Math.sin(t * 1.5 + i) * 20, by = 320 + (i % 3) * 140 + Math.cos(t * 1.2 + i) * 15;
+    if (ex < bx) { bug(bx, by, 34, t + i); continue; }
+    const age = (ex - bx) / 450;
+    if (age < .5) bug(bx, by, 34 * (1 - age * 2), t + i, { a: 1 - age * 2 });
+    note(bx, by - age * 140, 34, i % 3, { c: INK, a: clamp(age * 3) * (1 - ramp(age, 1.2, 2)) });
+  }
+  if (ex > -100 && ex < 1700) { const p = []; for (let k = 0; k <= 16; k++) p.push([ex + (k % 2 ? 40 : -40) - k * 6, 120 + k * 42]); S(p, 1, { w: 6, a: .8 }); }
+}
+
+function sLookUp(g) {
+  const { el, t } = g, u = er(el, 0, g.dur), sy = lerp(180, 780, u);
+  S(waveLine(sy, 9, t), 1, { w: 3.5 });
+  for (let k = 1; k <= 3; k++) S(waveLine(sy + k * 50, 6, t, k), 1, { w: 2, a: .6 - k * .12 });
+}
+
+function sFinale(g) {
+  const { el, t } = g, D = g.dur, k = Math.min(1, D / 24), e = el / k;
+  const step = 60 / BPM, kk = Math.floor((e - 4) / step), fr = ((e - 4) / step) % 1;
+  piano(700, 470, 520, 190, { prog: er(e, .5, 3.5), press: i => e > 4 && MELODY[kk % MELODY.length] === i ? 1 - fr : 0 });
+  cake(1170, 520, 110, er(e, 1.5, 4), t);
+  noteField(t, { x: 870, y: 160, w: 240, h: 220, n: 8, seed: 3, a: ramp(e, 3, 5) });
+  const tEnd = 13.5, msg = 'Happy Birthday, Jasmine!';
+  g.hideSub = e > 9.5;
+  const wf = ramp(el, D - 2.5, D - .3);
+  // 「閃閃發亮」：簡單的五角星在隨機位置一閃一閃（約 4:02～4:09）
+  const twA = ramp(el, 0, .6) * (1 - ramp(el, 6.5, 7.5));
+  if (twA > 0) for (let i = 0; i < 24; i++) {
+    const period = 1 + rnd(i * 2.1) * 1, x0 = el / period + rnd(i * 5.9), cyc = Math.floor(x0), ph = x0 - cyc, sd = i * 31.7 + cyc * 7.3;
+    const x = 80 + rnd(sd) * 1440, y = 60 + rnd(sd + 1) * 700, r = 10 + rnd(sd + 2) * 14, a = Math.sin(Math.PI * ph) * twA;
+    simpleStar(x, y, r * (.5 + .5 * Math.sin(Math.PI * ph)), a, rnd(sd + 3) * Math.PI);
+  }
+  // 4:10 出現的中文祝福（一般繁體中文字體）
+  const zhA = ramp(el, 8, 8.8) * (1 - wf);
+  if (zhA > 0) T(ZH_MSG, 800, 660, 58, 1, { f: SANS_TC, wt: 700, c: INK, a: zhA });
+  rainbowText(msg, 800, 760, 96, ramp(e, 10, tEnd), t, 1 - wf);
+  // 字寫完後放 5 秒彩色煙火
+  const fwStart = Math.min(tEnd * k, D - 8);
+  fireworks(el - fwStart, 5);
+  if (wf > 0) {
+    ctx.fillStyle = `rgba(244,248,252,${wf})`; ctx.fillRect(-800, -800, 3200, 2500);
+    rainbowText(msg, 800, 420, 110, 1, t, wf);
+    T(ZH_MSG, 800, 540, 60, 1, { f: SANS_TC, wt: 700, c: '#4F6B80', a: wf });
+  }
+}
+
+// 簡單的白色五角星
+function simpleStar(x, y, r, a, rot = 0) {
+  if (a <= 0 || r <= 0) return;
+  alpha(a, () => {
+    ctx.beginPath();
+    for (let k = 0; k < 10; k++) { const ang = rot - Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? r * .45 : r; ctx.lineTo(x + Math.cos(ang) * rr, y + Math.sin(ang) * rr); }
+    ctx.closePath(); ctx.fillStyle = '#FFF8D6'; ctx.fill();
+  });
+}
+
+const ZH_MSG = '映頤 祝妳生日快樂';
+const SANS_TC = "'Noto Sans TC', 'Microsoft JhengHei', 'PingFang TC', sans-serif";
+
+// 每個字母一個隨機顏色，每 0.4 秒換一次
+function rainbowText(s, x, y, size, prog, t, a = 1) {
+  prog = clamp(prog); if (prog <= 0 || a <= 0) return;
+  const chars = [...s], n = chars.length * prog, k = Math.floor(n), tick = Math.floor(t / .4);
+  ctx.font = `700 ${size}px ${HAND}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  let cx = x - ctx.measureText(s).width / 2;
+  const ga = ctx.globalAlpha;
+  chars.forEach((ch, i) => {
+    const w = ctx.measureText(ch).width;
+    if (i <= k && ch !== ' ') {
+      ctx.globalAlpha = ga * a * (i < k ? 1 : n - k);
+      ctx.fillStyle = `hsl(${Math.floor(rnd(i * 7.7 + tick * 13.1) * 360)}, 85%, 65%)`;
+      ctx.fillText(ch, cx, y + Math.sin(t * 4 + i * .6) * 4);
+    }
+    cx += w;
+  });
+  ctx.globalAlpha = ga;
+}
+
+// 彩色煙火：age = 開始後經過的秒數，len = 持續秒數
+function fireworks(age, len) {
+  if (age < 0 || age > len + 2) return;
+  const shells = 16, sb = ctx.shadowBlur; ctx.shadowBlur = 0;
+  for (let i = 0; i < shells; i++) {
+    const t0 = i / shells * (len - .6), a = age - t0; if (a < 0 || a > 2.6) continue;
+    const bx = 180 + rnd(i * 3.7) * 1240, by = 130 + rnd(i * 5.3) * 300, hue = Math.floor(rnd(i * 9.1) * 360), col = `hsl(${hue}, 85%, 58%)`;
+    if (a < .6) { // 往上飛
+      const u = a / .6, y = lerp(900, by, 1 - (1 - u) * (1 - u));
+      ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx, y); ctx.lineTo(bx, y + 40); ctx.stroke();
+      continue;
+    }
+    const b = a - .6, n = 34, fade = 1 - b / 2;
+    ctx.globalAlpha = clamp(fade); ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let j = 0; j < n; j++) {
+      const ang = j / n * Math.PI * 2 + rnd(i + j), v = 190 + rnd(i * 2 + j) * 60;
+      const r1 = v * (1 - Math.exp(-b * 2.2)), r0 = v * (1 - Math.exp(-Math.max(0, b - .12) * 2.2)), gy = 40 * b * b;
+      ctx.moveTo(bx + Math.cos(ang) * r0, by + Math.sin(ang) * r0 + gy);
+      ctx.lineTo(bx + Math.cos(ang) * r1, by + Math.sin(ang) * r1 + gy);
+    }
+    ctx.stroke();
+    ctx.fillStyle = `hsl(${(hue + 40) % 360}, 90%, 70%)`;
+    for (let j = 0; j < n; j += 3) {
+      const ang = j / n * Math.PI * 2 + rnd(i + j), r = (190 + rnd(i * 2 + j) * 60) * (1 - Math.exp(-b * 2.2)) * .7;
+      ctx.beginPath(); ctx.arc(bx + Math.cos(ang) * r, by + Math.sin(ang) * r + 40 * b * b, 3, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.shadowBlur = sb;
+}
+
+// 分鏡順序：at = 從第幾句歌詞開始（-1 代表從 0 秒開始）
+const SHOTS = [
+  { at: -1, n: 0, name: '前奏・鋼琴', f: sIntro },
+  { at: 0, n: 1, name: 'if / else', f: sIfElse },
+  { at: 1, n: 2, name: '亂數→方向', f: sArrow },
+  { at: 2, n: 3, name: 'for 迴圈', f: sFor },
+  { at: 4, n: 4, name: '縮排', f: sIndent },
+  { at: 6, n: 5, name: '霧', f: sFog },
+  { at: 8, n: 6, name: '鯨魚 print()', f: sPrint },
+  { at: 10, n: 7, name: '暴力解', f: sBrute },
+  { at: 12, n: 8, name: '一關一關', f: sErase },
+  { at: 14, n: 9, name: '矩陣翻轉', f: sMatrix },
+  { at: 16, n: 10, name: '閉上眼', f: sEye },
+  { at: 18, n: 11, name: '發芽', f: sSprout },
+  { at: 20, n: 12, name: '迷宮', f: sMaze },
+  { at: 22, n: 13, name: '重設', f: sReset },
+  { at: 24, n: 14, name: '更新', f: sUpdate },
+  { at: 26, n: 15, name: '清單', f: sList },
+  { at: 28, n: 16, name: '得分', f: sScore },
+  { at: 30, n: 17, name: '大地圖', f: sMap },
+  { at: 32, n: 18, name: '鋪路／內建', f: sPave },
+  { at: 34, n: 19, name: '大和小', f: sSort },
+  { at: 36, n: 20, name: '三根支柱', f: sPillars },
+  { at: 38, n: 21, name: '背包', f: sBackpack },
+  { at: 40, n: 22, name: '不用完美', f: sCheck },
+  { at: 42, n: 23, name: '鍵盤聲', f: sKeys },
+  { at: 44, n: 24, name: '深呼吸', f: sBreath },
+  { at: 45, n: 25, name: '螢幕', f: sScreen },
+  { at: 46, n: 26, name: '日出', f: sSunrise },
+  { at: 48, n: 27, name: '每一行都在鋪路', f: sBridgeRoad },
+  { at: 50, n: 28, name: '重設 II', f: sReset, v: 2 },
+  { at: 52, n: 28, name: '更新 II', f: sUpdate, v: 2 },
+  { at: 54, n: 28, name: '清單 II', f: sList, v: 2 },
+  { at: 56, n: 29, name: '得分 II', f: sScore, v: 2 },
+  { at: 58, n: 30, name: '一行一行', f: sBubbles },
+  { at: 59, n: 31, name: 'Bug 退散', f: sBugs },
+  { at: 60, n: 32, name: '抬起頭', f: sLookUp },
+  { at: 61, n: 33, name: '映頤，祝生日快樂', f: sFinale },
+];
+
+// ============================================================
+// 背景、字幕、節拍
+// ============================================================
+const SEC_LEVEL = [.05, 0, .05, .55, .15, null, .8, null];
+function secStart(i) { return i === 0 ? 0 : TIMES[SECTIONS[i].first] - .8; }
+function secLevel(i, t) {
+  if (i === 5) return lerp(.15, .72, er(t, TIMES[46] - .5, TIMES[48] + 1));
+  if (i === 7) return lerp(.85, 1, ramp(t, TIMES[58], TIMES[61]));
+  return SEC_LEVEL[i];
+}
+function bgLevel(t) {
+  let s = 0;
+  for (let i = 0; i < SECTIONS.length; i++) if (t >= secStart(i)) s = i;
+  let v = secLevel(s, t);
+  const st = secStart(s);
+  if (s > 0 && t - st < 2.5) v = lerp(secLevel(s - 1, t), v, ease((t - st) / 2.5));
+  return v;
+}
+function drawBg(t) {
+  const b = bgLevel(t), w = cv.width, h = cv.height;
+  const gr = ctx.createRadialGradient(w * .5, h * .38, 0, w * .5, h * .38, Math.max(w, h) * .75);
+  // 背景 #0F4C81；副歌、結尾時中心稍微提亮
+  gr.addColorStop(0, mix('#1C5B93', '#3A7AB5', b)); gr.addColorStop(1, '#0F4C81');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, w, h);
+  return b;
+}
+function beatInfo(t) { const x = (t - TIMES[22]) / (60 / BPM), n = Math.floor(x), ph = x - n; return { n: ((n % 4) + 4) % 4, ph, pulse: Math.exp(-ph * 5) }; }
+function lineAt(t) { let i = -1; for (let k = 0; k < TIMES.length; k++) if (TIMES[k] <= t) i = k; return i; }
+function subtitle(t, b) {
+  const i = lineAt(t); if (i < 0) return;
+  const st = TIMES[i], en = Math.min(TIMES[i + 1] ?? Infinity, (ENDS[i] ?? st + 7) + .3, songEnd());
+  if (t > en) return;
+  const a = Math.min(1, (t - st) / .3, (en - t) / .4);
+  T(LYRICS[i].text, 800, 840, 46, ramp(t, st, st + .6), { a, c: INK });
+}
+
+// ============================================================
+// 播放控制
+// ============================================================
+const au = document.getElementById('au');
+let audioOK = true, fakeT = 0, fakePlaying = false, lastNow = performance.now();
+au.addEventListener('error', () => {
+  audioOK = false;
+  document.getElementById('err').textContent = '找不到 APCS之歌.mp3：請把音檔和 index.html 放在同一個資料夾（目前會無聲播放畫面）';
+});
+function songEnd() { return audioOK && isFinite(au.duration) && au.duration > 0 ? au.duration : 264; }
+function getT() { return audioOK ? au.currentTime : fakeT; }
+function setT(x) { x = clamp(x, 0, songEnd()); if (audioOK) au.currentTime = x; else fakeT = x; }
+function isPlaying() { return audioOK ? !au.paused : fakePlaying; }
+function playP() { if (audioOK) au.play().catch(() => { audioOK = false; fakePlaying = true; }); else fakePlaying = true; }
+function pauseP() { if (audioOK) au.pause(); else fakePlaying = false; }
+
+function shotAt(t) {
+  let idx = 0;
+  for (let i = 0; i < SHOTS.length; i++) { const s = SHOTS[i].at < 0 ? 0 : TIMES[SHOTS[i].at]; if (t >= s) idx = i; }
+  return idx;
+}
+
+function frame(now) {
+  if (!audioOK && fakePlaying) { fakeT = Math.min(songEnd(), fakeT + (now - lastNow) / 1000); if (fakeT >= songEnd()) fakePlaying = false; }
+  lastNow = now;
+  const t = getT();
+  curT = t; boil = Math.floor(now / 120);
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.shadowColor = 'transparent';
+  const b = drawBg(t);
+  ctx.setTransform(scale, 0, 0, scale, offX, offY);
+  ctx.shadowColor = 'rgba(30,55,80,.35)'; ctx.shadowBlur = 4 * scale;
+
+  const si = shotAt(t), sh = SHOTS[si];
+  const start = sh.at < 0 ? 0 : TIMES[sh.at];
+  const nextStart = si + 1 < SHOTS.length ? TIMES[SHOTS[si + 1].at] : songEnd();
+  const dur = Math.max(.5, nextStart - start), el = clamp(t - start, 0, dur);
+  const lineRel = k => { const x = TIMES[sh.at + k]; return x !== undefined && sh.at >= 0 ? x - start : dur * k / 2; };
+  const half = clamp(lineRel(1), .5, Math.max(.5, dur - .5));
+  const g = { t, el, dur, v: sh.v || 1, line: lineRel, half, beat: beatInfo(t) };
+  const last = si === SHOTS.length - 1;
+  const fade = Math.min(1, el / .35, last ? 1 : (dur - el) / .35);
+  ctx.save(); ctx.globalAlpha = clamp(fade);
+  try { sh.f(g); } catch (err) { console.error(sh.name, err); }
+  ctx.restore();
+  if (!g.hideSub) subtitle(t, b);
+
+  updateUI(t, sh);
+  requestAnimationFrame(frame);
+}
+
+// ---------- 介面 ----------
+const $ = id => document.getElementById(id);
+const bar = $('bar'), seek = $('seek'), tapBox = $('tap'), panel = $('panel'), json = $('json');
+let seeking = false, hideTimer = 0, forceHide = false;
+const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+function updateUI(t, sh) {
+  $('playBtn').textContent = isPlaying() ? '❚❚' : '▶';
+  $('time').textContent = `${fmt(t)} / ${fmt(songEnd())}`;
+  $('shot').textContent = `#${sh.n} ${sh.name}`;
+  if (!seeking) seek.value = Math.round(t / songEnd() * 1000);
+  if (tap.on) renderTap();
+}
+function showBar() {
+  if (forceHide) return;
+  bar.classList.remove('hide'); clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => { if (isPlaying() && !tap.on) bar.classList.add('hide'); }, 2500);
+}
+addEventListener('mousemove', showBar);
+
+$('start').addEventListener('click', () => { $('start').classList.add('hidden'); playP(); showBar(); });
+$('playBtn').onclick = () => isPlaying() ? pauseP() : playP();
+seek.addEventListener('input', () => { seeking = true; setT(seek.value / 1000 * songEnd()); });
+seek.addEventListener('change', () => { seeking = false; });
+$('fsBtn').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+
+// ---------- 時間表面板 ----------
+function openPanel() { json.value = JSON.stringify({ bpm: BPM, times: TIMES.map(x => +x.toFixed(2)), ends: ENDS.map(x => +x.toFixed(2)) }, null, 1); panel.classList.remove('hidden'); }
+$('tblBtn').onclick = openPanel;
+$('closeBtn').onclick = () => panel.classList.add('hidden');
+$('copyBtn').onclick = () => {
+  json.select();
+  if (navigator.clipboard) navigator.clipboard.writeText(json.value).catch(() => document.execCommand('copy'));
+  else document.execCommand('copy');
+};
+$('applyBtn').onclick = () => {
+  try {
+    const d = JSON.parse(json.value);
+    if (!Array.isArray(d.times) || d.times.length !== LYRICS.length) throw new Error(`times 需要 ${LYRICS.length} 個數字`);
+    TIMES = d.times.map(Number); if (d.bpm) BPM = +d.bpm;
+    if (Array.isArray(d.ends) && d.ends.length === LYRICS.length) ENDS = d.ends.map(Number);
+    saveTiming(); panel.classList.add('hidden');
+  } catch (e) { json.value = '格式錯誤：' + e.message + '\n\n' + json.value; }
+};
+$('resetBtn').onclick = () => { TIMES = DEFAULT_TIMES.slice(); ENDS = DEFAULT_ENDS.slice(); BPM = DEFAULT_BPM; try { localStorage.removeItem(STORE_KEY); } catch (e) { } openPanel(); };
+
+// ---------- 打點校正 ----------
+const tap = { on: false, i: 0, taps: [] };
+function renderTap() {
+  const next = LYRICS[tap.i];
+  tapBox.innerHTML = `打點校正（${tap.i} / ${LYRICS.length}）　${fmt(getT())}<br>` +
+    (next ? `聽到這句開始時按 <b>空白鍵</b>：<br><b>「${next.text}」</b>` : '<b>完成！</b>') +
+    `<br><small>Backspace 復原上一句｜跟著拍子連按 T 量拍速（目前 ${BPM} BPM）｜Esc 結束並儲存</small>`;
+}
+function enterTap() {
+  panel.classList.add('hidden'); $('start').classList.add('hidden');
+  tap.on = true; tap.i = 0; tap.taps = [];
+  tapBox.classList.remove('hidden'); setT(0); playP(); renderTap();
+}
+function finishTap() { tap.on = false; tapBox.classList.add('hidden'); saveTiming(); openPanel(); }
+function markLine() {
+  const now = getT(), delta = now - TIMES[tap.i];
+  for (let j = tap.i; j < TIMES.length; j++) { TIMES[j] += delta; ENDS[j] += delta; } // 後面的句子一起平移，畫面保持順序
+  TIMES[tap.i] = now; tap.i++;
+  if (tap.i >= LYRICS.length) finishTap();
+}
+$('tapBtn').onclick = enterTap;
+
+addEventListener('keydown', e => {
+  if (e.target === json) return;
+  if (tap.on) {
+    if (e.code === 'Space') { e.preventDefault(); markLine(); }
+    else if (e.code === 'Backspace') { e.preventDefault(); if (tap.i > 0) { tap.i--; setT(Math.max(0, TIMES[tap.i] - 3)); } }
+    else if (e.code === 'KeyT') {
+      tap.taps.push(performance.now()); tap.taps = tap.taps.slice(-9);
+      if (tap.taps.length >= 4) { const d = (tap.taps[tap.taps.length - 1] - tap.taps[0]) / (tap.taps.length - 1); BPM = Math.round(60000 / d); }
+    } else if (e.code === 'Escape') finishTap();
+    return;
+  }
+  if (e.code === 'Space') { e.preventDefault(); $('start').classList.add('hidden'); isPlaying() ? pauseP() : playP(); }
+  else if (e.code === 'ArrowRight') setT(getT() + 5);
+  else if (e.code === 'ArrowLeft') setT(getT() - 5);
+  else if (e.code === 'KeyH') { forceHide = !forceHide; bar.classList.toggle('hide', forceHide); }
+  else if (e.code === 'KeyF') $('fsBtn').click();
+  showBar();
+});
+
+// 預覽用：index.html#still=120 會停在第 120 秒的畫面（不播音樂、不顯示控制列）
+const still = /still=([\d.]+)/.exec(location.hash);
+if (still) {
+  audioOK = false; fakeT = +still[1];
+  $('start').classList.add('hidden'); forceHide = true; bar.classList.add('hide');
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
