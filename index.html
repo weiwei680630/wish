@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>APCS之歌 MV</title>
+<title>Wish</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@500;700&display=swap" rel="stylesheet">
 <style>
@@ -36,7 +36,7 @@
 </head>
 <body>
 <canvas id="cv"></canvas>
-<audio id="au" src="APCS之歌.mp3" preload="auto"></audio>
+<audio id="au" src="wish.mp3" preload="auto"></audio>
 
 <div id="start">
   <h1>Wishing you happiness today, tomorrow, and always!</h1>
@@ -1193,7 +1193,7 @@ const au = document.getElementById('au');
 let audioOK = true, fakeT = 0, fakePlaying = false, lastNow = performance.now();
 au.addEventListener('error', () => {
   audioOK = false;
-  document.getElementById('err').textContent = '找不到 APCS之歌.mp3：請把音檔和 index.html 放在同一個資料夾（目前會無聲播放畫面）';
+  document.getElementById('err').textContent = '找不到 wish.mp3：請把音檔和 index.html 放在同一個資料夾（目前會無聲播放畫面）';
 });
 function songEnd() { return audioOK && isFinite(au.duration) && au.duration > 0 ? au.duration : 264; }
 function getT() { return audioOK ? au.currentTime : fakeT; }
